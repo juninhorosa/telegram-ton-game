@@ -6,181 +6,120 @@
   <title>Anúncio</title>
   <style>
     :root{
-      --bg:#050912;
-      --text:#EAF0FF;
-      --muted: rgba(234,240,255,.75);
-      --stroke: rgba(255,255,255,.12);
-      --accent:#7c5cff;
-      --accent2:#2ee9a6;
+      --bg:#050912; --text:#EAF0FF; --muted: rgba(234,240,255,.75);
+      --stroke: rgba(255,255,255,.12); --accent:#7c5cff; --accent2:#2ee9a6;
       --warn:#ffcf7a;
     }
     *{box-sizing:border-box}
     body{
-      margin:0;
-      height:100vh;
-      width:100vw;
-      overflow:hidden;
+      margin:0; height:100vh; width:100vw; overflow:hidden;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
       background:
         radial-gradient(900px 500px at 15% 0%, rgba(124,92,255,.25), transparent 55%),
         radial-gradient(900px 500px at 85% 20%, rgba(46,233,166,.18), transparent 60%),
         linear-gradient(180deg, #060A14, var(--bg));
       color: var(--text);
-      display:flex;
-      flex-direction:column;
+      display:flex; flex-direction:column;
     }
-
     .top{
-      padding:14px 14px 10px;
-      border-bottom:1px solid rgba(255,255,255,.06);
-      background: rgba(0,0,0,.25);
-      backdrop-filter: blur(14px);
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
+      padding:14px; border-bottom:1px solid rgba(255,255,255,.06);
+      background: rgba(0,0,0,.25); backdrop-filter: blur(14px);
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
     }
-
     .ttl{font-weight:900;font-size:14px}
     .timer{
-      padding:8px 12px;
-      border-radius:999px;
-      border:1px solid var(--stroke);
-      background: rgba(0,0,0,.25);
-      color: var(--muted);
-      font-size:12px;
-      white-space:nowrap;
+      padding:8px 12px; border-radius:999px; border:1px solid var(--stroke);
+      background: rgba(0,0,0,.25); color: var(--muted); font-size:12px; white-space:nowrap;
     }
-
-    .adWrap{
-      flex:1;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:14px;
-    }
-
+    .adWrap{flex:1; display:flex; align-items:center; justify-content:center; padding:14px;}
     .adBox{
-      width:100%;
-      height:100%;
-      border:1px dashed rgba(255,255,255,.18);
+      width:100%; height:100%;
+      border:1px solid rgba(255,255,255,.12);
       border-radius:18px;
       background: rgba(0,0,0,.22);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      text-align:center;
-      padding:14px;
-      color: rgba(234,240,255,.7);
-      position:relative;
-      overflow:hidden;
+      display:flex; align-items:center; justify-content:center;
+      text-align:center; padding:14px;
+      overflow:auto;
     }
-
     .bottom{
-      padding:14px;
-      border-top:1px solid rgba(255,255,255,.06);
-      background: rgba(0,0,0,.25);
-      backdrop-filter: blur(14px);
+      padding:14px; border-top:1px solid rgba(255,255,255,.06);
+      background: rgba(0,0,0,.25); backdrop-filter: blur(14px);
+      font-size:12px; color: var(--warn); line-height:1.35;
     }
-
-    .btn{
-      width:100%;
-      border:0;
-      padding: 14px;
-      border-radius: 14px;
-      font-weight:900;
-      cursor:pointer;
+    .ok{
+      display:inline-block; margin-top:10px;
+      padding:10px 12px; border-radius:12px;
       background: linear-gradient(135deg,var(--accent),var(--accent2));
-      color:#061018;
-      opacity:.6;
+      color:#061018; font-weight:900;
     }
-    .btn.enabled{opacity:1}
-    .note{margin-top:10px;font-size:12px;color:var(--warn);line-height:1.35}
   </style>
 </head>
 <body>
   <div class="top">
-    <div class="ttl">📺 Anúncio (Rewarded)</div>
-    <div class="timer" id="timer">Preparando…</div>
+    <div class="ttl">📺 Anúncio (na tela do Telegram)</div>
+    <div class="timer" id="timer">Carregando…</div>
   </div>
 
   <div class="adWrap">
     <div class="adBox" id="adBox">
-      Carregando anúncio…
+      <div>
+        <div style="font-weight:900;margin-bottom:6px">Carregando anúncio…</div>
+        <div style="opacity:.75">Aguarde alguns segundos.</div>
+        <div class="ok" id="status" style="display:none">✅ Prêmio liberado, voltando…</div>
+      </div>
+
+      <!-- ✅ COLE AQUI O SCRIPT IN-PAGE DO ADSTERRA (Banner/Social Bar/Native) -->
+      <!-- Exemplo (não use esse): 
+      <script>atOptions = {...}</script>
+      <script src="//www.highperformanceformat.com/XXXX/invoke.js"></script>
+      -->
     </div>
   </div>
 
   <div class="bottom">
-    <button class="btn" id="claimBtn" disabled>⏳ Aguarde para liberar recompensa</button>
-    <div class="note">
-      A recompensa só libera após o tempo mínimo. Se o Telegram bloquear pop/redirect, troque o formato para Social Bar / In-page no Adsterra.
-    </div>
+    ⚠️ Direct Link/Pop abre fora no Telegram. Use Banner/Social Bar/Native para renderizar aqui dentro.
   </div>
 
   <script>
     const params = new URLSearchParams(location.search);
     const tg_id = params.get("tg_id") || "";
     const nonce = params.get("nonce") || "";
-    const min = Math.max(5, Number(params.get("min") || 15));
+    const min = Math.max(8, Number(params.get("min") || 15));
 
     const timerEl = document.getElementById("timer");
-    const claimBtn = document.getElementById("claimBtn");
+    const statusEl = document.getElementById("status");
 
+    // Conta regressiva e claim automático
     let left = min;
     timerEl.textContent = `Aguarde ${left}s…`;
 
-    const t = setInterval(() => {
+    const t = setInterval(async () => {
       left--;
       if (left <= 0) {
         clearInterval(t);
-        timerEl.textContent = "Pode concluir ✅";
-        claimBtn.disabled = false;
-        claimBtn.classList.add("enabled");
-        claimBtn.textContent = "✅ Concluir e receber boost";
+        timerEl.textContent = "Finalizando…";
+
+        const r = await fetch("/api/ad/claim", {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ tg_id, nonce })
+        }).then(x => x.json()).catch(() => ({ ok:false, error:"network" }));
+
+        if (!r.ok) {
+          timerEl.textContent = "Falhou. Volte e tente de novo.";
+          alert("Não liberou: " + (r.error || "erro"));
+          return;
+        }
+
+        statusEl.style.display = "inline-block";
+        timerEl.textContent = "Prêmio liberado ✅";
+        setTimeout(() => {
+          location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
+        }, 900);
         return;
       }
       timerEl.textContent = `Aguarde ${left}s…`;
     }, 1000);
-
-    async function claim() {
-      claimBtn.disabled = true;
-      claimBtn.textContent = "Registrando…";
-
-      const r = await fetch("/api/ad/claim", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ tg_id, nonce })
-      }).then(x => x.json()).catch(() => ({ ok:false, error:"network" }));
-
-      if (!r.ok) {
-        claimBtn.disabled = false;
-        claimBtn.classList.add("enabled");
-        claimBtn.textContent = "Tentar novamente";
-        alert("Não liberou ainda: " + (r.error || "erro"));
-        return;
-      }
-
-      // volta pro app sem repetir claim
-      location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
-    }
-
-    claimBtn.addEventListener("click", () => {
-      if (claimBtn.disabled) return;
-      claim();
-    });
-  </script>
-
-  <!-- ✅ SEU SCRIPT ADSTERRA (pop/redirect) -->
-  <script src="https://pl28396278.effectivegatecpm.com/be/ac/35/beac35627ef514e4a6e87ae06623afb1.js"></script>
-
-  <script>
-    // feedback
-    const box = document.getElementById("adBox");
-    setTimeout(() => {
-      if (box && box.textContent.includes("Carregando")) {
-        box.textContent = "Anúncio carregado (ou abriu em nova camada). Aguarde o tempo e conclua.";
-      }
-    }, 1500);
   </script>
 </body>
 </html>
