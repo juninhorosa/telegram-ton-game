@@ -18,10 +18,6 @@ const BASE_URL = (
   ''
 ).replace(/\/$/, '');
 
-const TON_API = (process.env.TON_API || '').trim();
-const TONCENTER_API_KEY = (process.env.TONCENTER_API_KEY || '').trim();
-const TON_RECEIVER_ADDRESS = (process.env.TON_RECEIVER_ADDRESS || '').trim();
-
 if (!BOT_TOKEN) console.error('❌ BOT_TOKEN vazio');
 if (!BASE_URL) console.error('❌ BASE_URL vazio');
 
@@ -73,7 +69,7 @@ db.serialize(() => {
   `);
 
   db.get(`SELECT COUNT(*) AS c FROM items`, (e, r) => {
-    if (!e && r.c === 0) {
+    if (!e && r && r.c === 0) {
       const st = db.prepare(
         `INSERT INTO items (name, price_ton, points_per_day) VALUES (?,?,?)`
       );
@@ -92,19 +88,16 @@ bot.onText(/\/start/, msg => {
 
   db.run(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tgId]);
 
-  const webAppUrl = `${BASE_URL}/webapp/index.html?tg_id=${tgId}`;
+  const webAppUrl = `${BASE_URL}/webapp/index.html?tg_id=${encodeURIComponent(tgId)}`;
 
   if (!isAbsoluteHttpUrl(webAppUrl)) {
-    bot.sendMessage(
-      tgId,
-      '❌ Erro de configuração do servidor (BASE_URL inválido).'
-    );
+    bot.sendMessage(tgId, '❌ Erro: BASE_URL inválido no servidor.');
     return;
   }
 
   bot.sendMessage(
     tgId,
-    `🎮 Bem-vindo ao Jogo TON!
+    `🎮 Bem-vindo ao TON Game!
 
 ✅ Compre itens
 ⭐ Gere pontos
@@ -124,32 +117,39 @@ Clique abaixo para abrir:`,
 // ================= API =================
 app.get('/api/items', (req, res) => {
   db.all(
-    `SELECT id,name,price_ton,points_per_day FROM items WHERE active=1`,
+    `SELECT id,name,price_ton,points_per_day FROM items WHERE active=1 ORDER BY id ASC`,
     (e, rows) => {
-      if (e) return res.status(500).json({ ok: false });
+      if (e) return res.status(500).json({ ok: false, error: 'db_error' });
       res.json({ ok: true, items: rows });
     }
   );
 });
 
+// ✅ Perfil: agora cria usuário automaticamente se não existir
 app.get('/api/me', (req, res) => {
   const tg_id = String(req.query.tg_id || '');
-  if (!tg_id) return res.status(400).json({ ok: false });
+  if (!tg_id) return res.status(400).json({ ok: false, error: 'missing_tg_id' });
 
-  db.get(`SELECT * FROM users WHERE tg_id=?`, [tg_id], (e, user) => {
-    if (e || !user) return res.status(404).json({ ok: false });
+  // garante user
+  db.run(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tg_id], (insErr) => {
+    if (insErr) return res.status(500).json({ ok: false, error: 'db_error' });
 
-    db.all(
-      `SELECT i.name, inv.quantity, i.points_per_day
-       FROM inventory inv
-       JOIN items i ON i.id = inv.item_id
-       WHERE inv.tg_id=?`,
-      [tg_id],
-      (e2, inv) => {
-        if (e2) return res.status(500).json({ ok: false });
-        res.json({ ok: true, user, inventory: inv });
-      }
-    );
+    db.get(`SELECT tg_id, points FROM users WHERE tg_id=?`, [tg_id], (e, user) => {
+      if (e || !user) return res.status(500).json({ ok: false, error: 'db_error' });
+
+      db.all(
+        `SELECT i.id, i.name, inv.quantity, i.points_per_day
+         FROM inventory inv
+         JOIN items i ON i.id = inv.item_id
+         WHERE inv.tg_id=?
+         ORDER BY i.id ASC`,
+        [tg_id],
+        (e2, inv) => {
+          if (e2) return res.status(500).json({ ok: false, error: 'db_error' });
+          res.json({ ok: true, user, inventory: inv });
+        }
+      );
+    });
   });
 });
 
@@ -164,13 +164,18 @@ app.get('/debug/webhook', async (req, res) => {
     const info = await bot.getWebhookInfo();
     res.json(info);
   } catch (e) {
-    res.status(500).json({ error: String(e.message) });
+    res.status(500).json({ error: String(e.message || e) });
   }
 });
 
 // ================= WEBHOOK =================
 if (USE_WEBHOOK) {
   const secretPath = `/telegram-webhook/${BOT_TOKEN}`;
+
+  // (GET só para teste visual)
+  app.get(secretPath, (req, res) => {
+    res.status(200).send('Webhook endpoint OK (use POST).');
+  });
 
   app.post(secretPath, (req, res) => {
     console.log('📩 Update recebido:', JSON.stringify(req.body).slice(0, 300));
