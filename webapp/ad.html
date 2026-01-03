@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <title>Assistir anúncio</title>
+  <style>
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: #0b1222;
+      color:#eaf0ff;
+      display:flex;
+      min-height:100vh;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .card{
+      width:min(520px, 100%);
+      border:1px solid rgba(255,255,255,.12);
+      background: rgba(255,255,255,.06);
+      border-radius: 18px;
+      padding: 16px;
+    }
+    .h{font-weight:900;font-size:16px;margin:0 0 8px}
+    .p{opacity:.8;font-size:13px;line-height:1.4;margin:0 0 12px}
+    .box{
+      border:1px dashed rgba(255,255,255,.18);
+      border-radius: 16px;
+      padding: 14px;
+      margin: 12px 0;
+      background: rgba(0,0,0,.20);
+      min-height: 120px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+    }
+    .btn{
+      width:100%;
+      border:0;
+      padding: 14px;
+      border-radius: 14px;
+      font-weight:900;
+      cursor:pointer;
+      background: linear-gradient(135deg,#7c5cff,#2ee9a6);
+      color:#061018;
+    }
+    .small{font-size:12px;opacity:.7;margin-top:10px;line-height:1.35}
+    .warn{margin-top:10px;font-size:12px;opacity:.85;color:#ffcf7a}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="h">📺 Assistir anúncio</div>
+    <div class="p">
+      Aguarde o anúncio carregar. Depois clique em <b>Concluir</b> para receber o boost.
+    </div>
+
+    <div class="box" id="adBox">
+      Carregando anúncio…
+    </div>
+
+    <div class="warn">
+      Se o Telegram bloquear pop/redirect, tente novamente ou use “Social Bar / In-page” no Adsterra.
+    </div>
+
+    <button class="btn" id="doneBtn">✅ Concluir e receber boost</button>
+    <div class="small">
+      O boost respeita cooldown e limite diário. A pool mostra total e distribuído.
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const tg_id = params.get("tg_id") || "";
+    document.getElementById("doneBtn").onclick = () => {
+      location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}&ad_done=1`;
+    };
+  </script>
+
+  <!-- SCRIPT ADSTERRA -->
+  <script src="https://pl28396278.effectivegatecpm.com/be/ac/35/beac35627ef514e4a6e87ae06623afb1.js"></script>
+
+  <script>
+    const box = document.getElementById("adBox");
+    setTimeout(() => {
+      if (box && box.textContent.includes("Carregando")) {
+        box.textContent = "Anúncio carregado. Caso não veja nada, ele pode ter aberto em segundo plano.";
+      }
+    }, 1800);
+  </script>
+</body>
+</html>
