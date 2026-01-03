@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>TON Game</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
+  <style>
+    body{font-family:Arial;margin:16px}
+    .card{border:1px solid #ddd;border-radius:12px;padding:12px;margin:10px 0}
+    button{padding:10px 12px;border-radius:10px;border:0;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h2>🎮 Jogo TON</h2>
+
+  <div class="card">
+    <b>Status</b>
+    <div id="status">Carregando...</div>
+    <button id="connect">🔗 Conectar Carteira</button>
+  </div>
+
+  <div class="card">
+    <b>👤 Meu Perfil</b>
+    <div id="me"></div>
+    <div id="inv"></div>
+  </div>
+
+  <div class="card">
+    <b>🛒 Loja</b>
+    <div id="items">Carregando itens...</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
