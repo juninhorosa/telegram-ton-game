@@ -8,15 +8,36 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 app.use(express.json());
 
-// ---------- ENV ----------
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const BASE_URL = (process.env.BASE_URL || '').replace(/\/$/, '');
-const TON_API = process.env.TON_API;
-const TONCENTER_API_KEY = process.env.TONCENTER_API_KEY || '';
-const TON_RECEIVER_ADDRESS = process.env.TON_RECEIVER_ADDRESS || '';
+// ---------- ENV (Render-safe) ----------
+const BOT_TOKEN = (process.env.BOT_TOKEN || '').trim();
+
+// BASE_URL: prioriza BASE_URL (definido por você), senão usa RENDER_EXTERNAL_URL automaticamente.
+const BASE_URL = (
+  (process.env.BASE_URL && process.env.BASE_URL.trim()) ||
+  (process.env.RENDER_EXTERNAL_URL && process.env.RENDER_EXTERNAL_URL.trim()) ||
+  ''
+).replace(/\/$/, '');
+
+const TON_API = (process.env.TON_API || '').trim(); // ex: https://testnet.toncenter.com/api/v2
+const TONCENTER_API_KEY = (process.env.TONCENTER_API_KEY || '').trim();
+const TON_RECEIVER_ADDRESS = (process.env.TON_RECEIVER_ADDRESS || '').trim();
+
+if (!BOT_TOKEN) console.error('❌ BOT_TOKEN vazio. Configure no Render > Environment.');
+if (!BASE_URL) console.error('❌ BASE_URL vazio. Configure BASE_URL ou use RENDER_EXTERNAL_URL.');
+if (!TON_API) console.warn('⚠️ TON_API vazio. Configure TON_API para confirmar transações.');
+if (!TON_RECEIVER_ADDRESS) console.warn('⚠️ TON_RECEIVER_ADDRESS vazio. Configure para receber pagamentos.');
+
+function isAbsoluteHttpUrl(u) {
+  return /^https?:\/\/[^/]+/i.test(u);
+}
 
 // ---------- BOT ----------
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+
+// Evita crash por rejeições não tratadas
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+});
 
 // ---------- DB ----------
 const db = new sqlite3.Database('./database.db');
@@ -67,7 +88,7 @@ db.serialize(() => {
     )
   `);
 
-  // Seed de itens (só se não existir nada)
+  // Seed de itens (apenas se vazio)
   db.get(`SELECT COUNT(*) AS c FROM items`, (err, row) => {
     if (!err && row && row.c === 0) {
       const st = db.prepare(`INSERT INTO items (name, price_ton, points_per_day) VALUES (?, ?, ?)`);
@@ -75,28 +96,24 @@ db.serialize(() => {
       st.run('Miner Pro', 0.20, 50);
       st.run('Miner Elite', 0.50, 150);
       st.finalize();
+      console.log('✅ Seed de itens criado.');
     }
   });
 });
 
 // ---------- Helpers ----------
-function h(s) {
-  return String(s || '');
-}
-
 function fetchJson(url) {
   return fetch(url, {
     headers: TONCENTER_API_KEY ? { 'X-API-Key': TONCENTER_API_KEY } : {}
   }).then(r => r.json());
 }
 
-// Pega detalhes da transação por hash usando toncenter
+// Busca transações recentes do receiver e filtra por hash
 async function getTxByHash(txHash) {
-  // endpoint: /getTransactions?address=... é mais comum, mas dá trabalho buscar.
-  // Usaremos "getTransactions" e filtramos por hash. Precisamos do address receiver.
+  if (!TON_API) throw new Error('TON_API não configurado');
   if (!TON_RECEIVER_ADDRESS) throw new Error('TON_RECEIVER_ADDRESS não configurado');
 
-  const limit = 15; // busca as últimas 15 transações do receiver
+  const limit = 20;
   const url = `${TON_API}/getTransactions?address=${encodeURIComponent(TON_RECEIVER_ADDRESS)}&limit=${limit}`;
   const data = await fetchJson(url);
 
@@ -104,8 +121,6 @@ async function getTxByHash(txHash) {
     throw new Error('Falha ao buscar transações no toncenter');
   }
 
-  // Toncenter retorna hash em campos diferentes dependendo do formato.
-  // Tentamos casar por "transaction_id.hash" ou "transaction_id.lt+hash"
   const found = data.result.find(tx => {
     const hash = tx?.transaction_id?.hash;
     return hash && hash.toLowerCase() === txHash.toLowerCase();
@@ -114,18 +129,27 @@ async function getTxByHash(txHash) {
   return found || null;
 }
 
-// Converte nanoTON => TON
 function nanoToTon(nano) {
   const n = Number(nano);
   if (!Number.isFinite(n)) return 0;
   return n / 1e9;
 }
 
-// ---------- BOT /start ----------
+// ---------- BOT: /start ----------
 bot.onText(/\/start/, (msg) => {
   const tgId = String(msg.from.id);
 
-  db.run(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tgId]);
+  db.run(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tgId], (err) => {
+    if (err) console.error('DB insert user error:', err);
+  });
+
+  const webAppUrl = `${BASE_URL}/webapp/index.html?tg_id=${encodeURIComponent(tgId)}`;
+
+  if (!isAbsoluteHttpUrl(webAppUrl)) {
+    console.error('❌ WebApp URL inválida (precisa ser https://...):', webAppUrl);
+    bot.sendMessage(tgId, `❌ Erro de configuração: BASE_URL inválido.\nConfigure BASE_URL no Render com https://SEU-SERVICO.onrender.com`);
+    return;
+  }
 
   bot.sendMessage(
     tgId,
@@ -133,13 +157,13 @@ bot.onText(/\/start/, (msg) => {
 
 ✅ Compre itens (TON)
 🏆 Ganhe pontos por tempo (sem promessa de retorno fixo)
-💰 Resgates/benefícios podem depender do pool do jogo
+💰 Resgates podem depender do pool do jogo
 
 Clique para abrir:`,
     {
       reply_markup: {
         inline_keyboard: [[
-          { text: "▶️ Abrir Jogo", web_app: { url: `${BASE_URL}/webapp/index.html?tg_id=${encodeURIComponent(tgId)}` } }
+          { text: "▶️ Abrir Jogo", web_app: { url: webAppUrl } }
         ]]
       }
     }
@@ -148,22 +172,24 @@ Clique para abrir:`,
 
 // ---------- API ----------
 
-// Lista itens da loja
+// Lista itens
 app.get('/api/items', (req, res) => {
-  db.all(`SELECT id, name, price_ton, points_per_day FROM items WHERE active=1 ORDER BY id ASC`, (err, rows) => {
-    if (err) return res.status(500).json({ ok: false, error: 'db_error' });
-    res.json({ ok: true, items: rows });
-  });
+  db.all(
+    `SELECT id, name, price_ton, points_per_day FROM items WHERE active=1 ORDER BY id ASC`,
+    (err, rows) => {
+      if (err) return res.status(500).json({ ok: false, error: 'db_error' });
+      res.json({ ok: true, items: rows });
+    }
+  );
 });
 
-// Cria compra "pending" (retorna receiver + amount + purchase_id)
-// O usuário paga via TON Connect e depois chama /confirm
+// Criar purchase pending
 app.post('/api/purchase/create', (req, res) => {
   const { tg_id, item_id } = req.body || {};
   if (!tg_id || !item_id) return res.status(400).json({ ok: false, error: 'missing_fields' });
   if (!TON_RECEIVER_ADDRESS) return res.status(500).json({ ok: false, error: 'receiver_not_set' });
 
-  db.get(`SELECT id, name, price_ton FROM items WHERE id=? AND active=1`, [item_id], (err, item) => {
+  db.get(`SELECT id, name, price_ton FROM items WHERE id=? AND active=1`, [Number(item_id)], (err, item) => {
     if (err || !item) return res.status(404).json({ ok: false, error: 'item_not_found' });
 
     db.run(
@@ -177,14 +203,14 @@ app.post('/api/purchase/create', (req, res) => {
           purchase_id: this.lastID,
           receiver: TON_RECEIVER_ADDRESS,
           amount_ton: Number(item.price_ton),
-          comment: `BUY_ITEM_${item.id}_${this.lastID}` // opcional p/ payload
+          comment: `BUY_ITEM_${item.id}_${this.lastID}`
         });
       }
     );
   });
 });
 
-// Confirma compra: recebe purchase_id + tx_hash e valida no toncenter
+// Confirmar purchase por tx_hash (toncenter)
 app.post('/api/purchase/confirm', async (req, res) => {
   try {
     const { tg_id, purchase_id, tx_hash } = req.body || {};
@@ -197,8 +223,6 @@ app.post('/api/purchase/confirm', async (req, res) => {
       const tx = await getTxByHash(String(tx_hash));
       if (!tx) return res.status(400).json({ ok: false, error: 'tx_not_found_yet' });
 
-      // Verificações básicas:
-      // 1) transação deve ter "in_msg" e destino receiver
       const toAddr = tx?.in_msg?.destination;
       const valueNano = tx?.in_msg?.value;
       const valueTon = nanoToTon(valueNano);
@@ -207,12 +231,15 @@ app.post('/api/purchase/confirm', async (req, res) => {
         return res.status(400).json({ ok: false, error: 'wrong_receiver' });
       }
 
-      // 2) valor deve ser >= esperado (evita subpagamento)
       if (Number(valueTon) + 1e-9 < Number(p.ton_amount)) {
-        return res.status(400).json({ ok: false, error: 'insufficient_amount', paid: valueTon, expected: p.ton_amount });
+        return res.status(400).json({
+          ok: false,
+          error: 'insufficient_amount',
+          paid: valueTon,
+          expected: p.ton_amount
+        });
       }
 
-      // 3) marca purchase confirmada + dá item no inventário
       db.serialize(() => {
         db.run(
           `UPDATE purchases SET status='confirmed', tx_hash=?, confirmed_at=datetime('now') WHERE id=?`,
@@ -225,7 +252,6 @@ app.post('/api/purchase/confirm', async (req, res) => {
           [String(tg_id), Number(p.item_id)]
         );
 
-        // Notifica no Telegram
         bot.sendMessage(String(tg_id), `✅ Pagamento confirmado!\nItem liberado no teu inventário. 🎁`);
 
         res.json({ ok: true, status: 'confirmed', paid_ton: valueTon });
@@ -236,7 +262,7 @@ app.post('/api/purchase/confirm', async (req, res) => {
   }
 });
 
-// Perfil do usuário (pontos + inventário)
+// Perfil
 app.get('/api/me', (req, res) => {
   const tg_id = String(req.query.tg_id || '');
   if (!tg_id) return res.status(400).json({ ok: false, error: 'missing_tg_id' });
@@ -259,9 +285,12 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-// ---------- Static ----------
+// ---------- Static (Mini App) ----------
 app.use('/webapp', express.static(path.join(__dirname, 'webapp')));
 
 // ---------- Start ----------
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+app.listen(PORT, () => {
+  console.log('Servidor rodando na porta', PORT);
+  console.log('BASE_URL:', BASE_URL || '(vazio)');
+});
