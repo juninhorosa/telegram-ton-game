@@ -8,33 +8,30 @@ const sqlite3 = require('sqlite3').verbose();
 const app = express();
 app.use(express.json());
 
-// ---------- ENV (Render-safe) ----------
+// ---------- ENV ----------
 const BOT_TOKEN = (process.env.BOT_TOKEN || '').trim();
+const USE_WEBHOOK = (process.env.USE_WEBHOOK || '').trim() === '1';
 
-// BASE_URL: prioriza BASE_URL (definido por você), senão usa RENDER_EXTERNAL_URL automaticamente.
 const BASE_URL = (
   (process.env.BASE_URL && process.env.BASE_URL.trim()) ||
   (process.env.RENDER_EXTERNAL_URL && process.env.RENDER_EXTERNAL_URL.trim()) ||
   ''
 ).replace(/\/$/, '');
 
-const TON_API = (process.env.TON_API || '').trim(); // ex: https://testnet.toncenter.com/api/v2
+const TON_API = (process.env.TON_API || '').trim();
 const TONCENTER_API_KEY = (process.env.TONCENTER_API_KEY || '').trim();
 const TON_RECEIVER_ADDRESS = (process.env.TON_RECEIVER_ADDRESS || '').trim();
 
 if (!BOT_TOKEN) console.error('❌ BOT_TOKEN vazio. Configure no Render > Environment.');
-if (!BASE_URL) console.error('❌ BASE_URL vazio. Configure BASE_URL ou use RENDER_EXTERNAL_URL.');
-if (!TON_API) console.warn('⚠️ TON_API vazio. Configure TON_API para confirmar transações.');
-if (!TON_RECEIVER_ADDRESS) console.warn('⚠️ TON_RECEIVER_ADDRESS vazio. Configure para receber pagamentos.');
+if (!BASE_URL) console.error('❌ BASE_URL vazio. Configure BASE_URL no Render (https://...)');
 
 function isAbsoluteHttpUrl(u) {
   return /^https?:\/\/[^/]+/i.test(u);
 }
 
 // ---------- BOT ----------
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(BOT_TOKEN, USE_WEBHOOK ? { webHook: true } : { polling: true });
 
-// Evita crash por rejeições não tratadas
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled rejection:', err);
 });
@@ -88,7 +85,6 @@ db.serialize(() => {
     )
   `);
 
-  // Seed de itens (apenas se vazio)
   db.get(`SELECT COUNT(*) AS c FROM items`, (err, row) => {
     if (!err && row && row.c === 0) {
       const st = db.prepare(`INSERT INTO items (name, price_ton, points_per_day) VALUES (?, ?, ?)`);
@@ -101,14 +97,13 @@ db.serialize(() => {
   });
 });
 
-// ---------- Helpers ----------
+// ---------- TON helpers ----------
 function fetchJson(url) {
   return fetch(url, {
     headers: TONCENTER_API_KEY ? { 'X-API-Key': TONCENTER_API_KEY } : {}
   }).then(r => r.json());
 }
 
-// Busca transações recentes do receiver e filtra por hash
 async function getTxByHash(txHash) {
   if (!TON_API) throw new Error('TON_API não configurado');
   if (!TON_RECEIVER_ADDRESS) throw new Error('TON_RECEIVER_ADDRESS não configurado');
@@ -135,19 +130,15 @@ function nanoToTon(nano) {
   return n / 1e9;
 }
 
-// ---------- BOT: /start ----------
+// ---------- BOT handlers ----------
 bot.onText(/\/start/, (msg) => {
   const tgId = String(msg.from.id);
 
-  db.run(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tgId], (err) => {
-    if (err) console.error('DB insert user error:', err);
-  });
+  db.run(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tgId]);
 
   const webAppUrl = `${BASE_URL}/webapp/index.html?tg_id=${encodeURIComponent(tgId)}`;
-
   if (!isAbsoluteHttpUrl(webAppUrl)) {
-    console.error('❌ WebApp URL inválida (precisa ser https://...):', webAppUrl);
-    bot.sendMessage(tgId, `❌ Erro de configuração: BASE_URL inválido.\nConfigure BASE_URL no Render com https://SEU-SERVICO.onrender.com`);
+    bot.sendMessage(tgId, `❌ BASE_URL inválido no servidor.\nConfigure BASE_URL com https://SEU-SERVICO.onrender.com`);
     return;
   }
 
@@ -171,25 +162,19 @@ Clique para abrir:`,
 });
 
 // ---------- API ----------
-
-// Lista itens
 app.get('/api/items', (req, res) => {
-  db.all(
-    `SELECT id, name, price_ton, points_per_day FROM items WHERE active=1 ORDER BY id ASC`,
-    (err, rows) => {
-      if (err) return res.status(500).json({ ok: false, error: 'db_error' });
-      res.json({ ok: true, items: rows });
-    }
-  );
+  db.all(`SELECT id, name, price_ton, points_per_day FROM items WHERE active=1 ORDER BY id ASC`, (err, rows) => {
+    if (err) return res.status(500).json({ ok: false, error: 'db_error' });
+    res.json({ ok: true, items: rows });
+  });
 });
 
-// Criar purchase pending
 app.post('/api/purchase/create', (req, res) => {
   const { tg_id, item_id } = req.body || {};
   if (!tg_id || !item_id) return res.status(400).json({ ok: false, error: 'missing_fields' });
   if (!TON_RECEIVER_ADDRESS) return res.status(500).json({ ok: false, error: 'receiver_not_set' });
 
-  db.get(`SELECT id, name, price_ton FROM items WHERE id=? AND active=1`, [Number(item_id)], (err, item) => {
+  db.get(`SELECT id, price_ton FROM items WHERE id=? AND active=1`, [Number(item_id)], (err, item) => {
     if (err || !item) return res.status(404).json({ ok: false, error: 'item_not_found' });
 
     db.run(
@@ -197,20 +182,17 @@ app.post('/api/purchase/create', (req, res) => {
       [String(tg_id), Number(item_id), Number(item.price_ton), TON_RECEIVER_ADDRESS],
       function (e2) {
         if (e2) return res.status(500).json({ ok: false, error: 'db_error' });
-
         res.json({
           ok: true,
           purchase_id: this.lastID,
           receiver: TON_RECEIVER_ADDRESS,
-          amount_ton: Number(item.price_ton),
-          comment: `BUY_ITEM_${item.id}_${this.lastID}`
+          amount_ton: Number(item.price_ton)
         });
       }
     );
   });
 });
 
-// Confirmar purchase por tx_hash (toncenter)
 app.post('/api/purchase/confirm', async (req, res) => {
   try {
     const { tg_id, purchase_id, tx_hash } = req.body || {};
@@ -230,19 +212,12 @@ app.post('/api/purchase/confirm', async (req, res) => {
       if (!toAddr || String(toAddr) !== String(TON_RECEIVER_ADDRESS)) {
         return res.status(400).json({ ok: false, error: 'wrong_receiver' });
       }
-
       if (Number(valueTon) + 1e-9 < Number(p.ton_amount)) {
-        return res.status(400).json({
-          ok: false,
-          error: 'insufficient_amount',
-          paid: valueTon,
-          expected: p.ton_amount
-        });
+        return res.status(400).json({ ok: false, error: 'insufficient_amount', paid: valueTon, expected: p.ton_amount });
       }
 
       db.serialize(() => {
-        db.run(
-          `UPDATE purchases SET status='confirmed', tx_hash=?, confirmed_at=datetime('now') WHERE id=?`,
+        db.run(`UPDATE purchases SET status='confirmed', tx_hash=?, confirmed_at=datetime('now') WHERE id=?`,
           [String(tx_hash), Number(purchase_id)]
         );
 
@@ -253,7 +228,6 @@ app.post('/api/purchase/confirm', async (req, res) => {
         );
 
         bot.sendMessage(String(tg_id), `✅ Pagamento confirmado!\nItem liberado no teu inventário. 🎁`);
-
         res.json({ ok: true, status: 'confirmed', paid_ton: valueTon });
       });
     });
@@ -262,7 +236,6 @@ app.post('/api/purchase/confirm', async (req, res) => {
   }
 });
 
-// Perfil
 app.get('/api/me', (req, res) => {
   const tg_id = String(req.query.tg_id || '');
   if (!tg_id) return res.status(400).json({ ok: false, error: 'missing_tg_id' });
@@ -285,12 +258,31 @@ app.get('/api/me', (req, res) => {
   });
 });
 
-// ---------- Static (Mini App) ----------
+// ---------- Static ----------
 app.use('/webapp', express.static(path.join(__dirname, 'webapp')));
+
+// ---------- Webhook (produção) ----------
+if (USE_WEBHOOK) {
+  const secretPath = `/telegram-webhook/${BOT_TOKEN}`;
+
+  // endpoint que recebe updates do Telegram
+  app.post(secretPath, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+  });
+
+  // seta o webhook na inicialização
+  (async () => {
+    const webhookUrl = `${BASE_URL}${secretPath}`;
+    console.log('✅ Setting webhook to:', webhookUrl);
+    await bot.setWebHook(webhookUrl);
+  })().catch(e => console.error('setWebHook error:', e));
+}
 
 // ---------- Start ----------
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log('Servidor rodando na porta', PORT);
   console.log('BASE_URL:', BASE_URL || '(vazio)');
+  console.log('MODE:', USE_WEBHOOK ? 'WEBHOOK' : 'POLLING');
 });
