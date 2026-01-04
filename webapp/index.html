@@ -1,334 +1,96 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
-  <title>TON Game</title>
-
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
-
-  <style>
-    :root{
-      --bg1:#070A12;
-      --bg2:#0B1222;
-      --stroke: rgba(255,255,255,.10);
-      --text:#EAF0FF;
-      --muted: rgba(234,240,255,.7);
-      --good:#33D17A;
-      --warn:#FFB020;
-      --bad:#FF4D4D;
-      --accent:#7C5CFF;
-      --accent2:#2EE9A6;
-      --shadow: 0 18px 60px rgba(0,0,0,.45);
-      --radius: 18px;
-    }
-
-    *{box-sizing:border-box}
-    body{
-      margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      color:var(--text);
-      background:
-        radial-gradient(900px 500px at 15% 0%, rgba(124,92,255,.30), transparent 55%),
-        radial-gradient(900px 500px at 85% 20%, rgba(46,233,166,.20), transparent 60%),
-        linear-gradient(180deg, var(--bg1), var(--bg2));
-      min-height:100vh;
-      overflow-x:hidden;
-    }
-
-    .wrap{max-width:980px;margin:0 auto;padding:0 14px 36px;}
-
-    /* TOPBAR FIXA */
-    .topbar{
-      position: sticky;
-      top: 0;
-      z-index: 999;
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      padding: 14px 8px 14px;
-      background: rgba(7,10,18,.72);
-      backdrop-filter: blur(14px);
-      border-bottom: 1px solid rgba(255,255,255,.06);
-    }
-
-    .brand{display:flex;align-items:center;gap:12px;}
-    .logo{
-      width:44px;height:44px;border-radius:14px;
-      background:
-        radial-gradient(18px 18px at 30% 30%, rgba(255,255,255,.25), transparent 60%),
-        linear-gradient(135deg, rgba(124,92,255,1), rgba(46,233,166,1));
-      box-shadow: var(--shadow);
-      position:relative; overflow:hidden;
-    }
-    .logo:after{
-      content:""; position:absolute; inset:-30px;
-      background: conic-gradient(from 180deg, rgba(255,255,255,.0), rgba(255,255,255,.35), rgba(255,255,255,.0));
-      animation: spin 5.5s linear infinite;
-      opacity:.55;
-    }
-    @keyframes spin{to{transform:rotate(360deg)}}
-    .brand h1{margin:0;font-size:16px;line-height:1.15}
-    .brand p{margin:2px 0 0;font-size:12px;color:var(--muted)}
-
-    .pill{
-      display:inline-flex; align-items:center; gap:8px;
-      padding: 10px 12px; border-radius: 999px;
-      border:1px solid var(--stroke);
-      background: rgba(0,0,0,.25);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 10px 30px rgba(0,0,0,.25);
-      font-size: 12px; color: var(--muted);
-      white-space:nowrap;
-    }
-    .dot{width:10px;height:10px;border-radius:999px;background: rgba(255,255,255,.25);}
-    .dot.good{background: var(--good);}
-    .dot.warn{background: var(--warn);}
-    .dot.bad{background: var(--bad);}
-
-    .content{padding-top: 16px;}
-
-    .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;}
-    @media (max-width: 860px){.grid{grid-template-columns:1fr}}
-
-    .card{
-      border: 1px solid var(--stroke);
-      background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04));
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(12px);
-      overflow:hidden;
-    }
-    .card .hd{padding:14px 14px 10px;border-bottom:1px solid rgba(255,255,255,.06);}
-    .card .hd .title{font-weight:900;font-size:13px;}
-    .card .hd .sub{margin-top:3px;font-size:12px;color:var(--muted);}
-    .card .bd{padding:14px;}
-
-    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
-    @media (max-width: 420px){.stats{grid-template-columns:1fr}}
-    .stat{
-      border:1px solid rgba(255,255,255,.08);
-      background: rgba(0,0,0,.22);
-      border-radius: 16px;
-      padding: 12px;
-    }
-    .stat .k{font-size:11px;color:var(--muted);}
-    .stat .v{margin-top:6px;font-size:18px;font-weight:900;}
-    .stat .mini{margin-top:2px;font-size:11px;color:var(--muted);}
-
-    .btnrow{display:flex;gap:10px;flex-wrap:wrap}
-    .btn{
-      border:0;border-radius:14px;padding:12px 14px;
-      font-weight:900;font-size:13px;cursor:pointer;
-      display:inline-flex;align-items:center;justify-content:center;gap:10px;
-      min-height:44px;
-      transition: transform .08s ease, opacity .12s ease;
-    }
-    .btn:active{transform:scale(.99)}
-    .btn.primary{color:#061018;background:linear-gradient(135deg,var(--accent),var(--accent2));}
-    .btn.ghost{color:var(--text);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);}
-    .btn.full{width:100%}
-    .btn[disabled]{opacity:.55;cursor:not-allowed}
-
-    .shop{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;}
-    @media (max-width: 520px){.shop{grid-template-columns:1fr}}
-    .item{
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.22);
-      border-radius: 18px;
-      padding: 12px;
-    }
-    .item .name{font-weight:900;margin-bottom:6px;}
-    .item .meta{color:var(--muted);font-size:12px;display:flex;gap:10px;flex-wrap:wrap;}
-    .badge{padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.06);font-size:12px;}
-
-    .inv{display:flex;flex-direction:column;gap:10px;}
-    .invrow{
-      display:flex;align-items:center;justify-content:space-between;gap:10px;
-      padding: 10px 12px;border-radius:16px;border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.20);
-    }
-    .invrow .nm{font-weight:900;font-size:13px;}
-    .invrow .ds{font-size:12px;color:var(--muted);}
-    .qty{font-weight:900;font-size:13px;padding:6px 10px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);}
-
-    /* Pool */
-    .poolGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-    @media (max-width:520px){.poolGrid{grid-template-columns:1fr}}
-    .poolBox{
-      border:1px solid rgba(255,255,255,.10);
-      background: rgba(0,0,0,.22);
-      border-radius: 16px;
-      padding: 12px;
-    }
-    .poolBox .k{font-size:11px;color:var(--muted)}
-    .poolBox .v{margin-top:6px;font-size:16px;font-weight:900}
-    .bar{
-      margin-top:10px;
-      height:10px;border-radius:999px;
-      background: rgba(255,255,255,.08);
-      overflow:hidden;
-      border:1px solid rgba(255,255,255,.10);
-    }
-    .bar > div{
-      height:100%;
-      width:0%;
-      background: linear-gradient(135deg,var(--accent),var(--accent2));
-    }
-    .hint{margin-top:8px;font-size:12px;color:var(--muted);line-height:1.35}
-
-    /* Toast */
-    .toast{
-      position:fixed;left:50%;bottom:18px;transform:translateX(-50%);
-      width:min(680px, calc(100% - 24px));
-      padding: 12px 14px;border-radius:16px;border:1px solid rgba(255,255,255,.14);
-      background: rgba(10,14,26,.72);backdrop-filter: blur(14px);box-shadow: var(--shadow);
-      display:none;align-items:flex-start;gap:10px;z-index:9999;
-    }
-    .toast.show{display:flex}
-    .toast .t{font-weight:900;font-size:13px}
-    .toast .m{font-size:12px;color:var(--muted);margin-top:2px}
-    .toast .x{margin-left:auto;background:transparent;border:0;color:rgba(255,255,255,.7);font-size:20px;cursor:pointer}
-  </style>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
+  <title>TON GAME</title>
+  <link rel="stylesheet" href="/webapp/style.css?v=5"/>
 </head>
-
 <body>
-  <div class="wrap">
-    <div class="topbar">
+  <div class="app">
+    <header class="topbar">
       <div class="brand">
         <div class="logo"></div>
         <div>
-          <h1>TON Game</h1>
-          <p>Mini App • Loja • Inventário • Pool & Boost</p>
+          <div class="t1">TON Game</div>
+          <div class="t2">Mini App • Dashboard • Loja • Anúncio</div>
         </div>
       </div>
-      <div class="pill">
-        <span class="dot warn" id="statusDot"></span>
-        <span id="statusText">Carregando…</span>
-      </div>
-    </div>
+      <div id="statusBar" class="status" data-type="warn">Carregando…</div>
+    </header>
 
-    <div class="content">
-      <div class="grid">
+    <nav class="tabs">
+      <button class="tab active" data-tab="dash">Dashboard</button>
+      <button class="tab" data-tab="shop">Loja</button>
+      <button class="tab" data-tab="ad">Anúncio</button>
+    </nav>
 
-        <!-- ESQUERDA -->
+    <main class="content">
+      <!-- DASH -->
+      <section class="panel active" id="tab-dash">
         <div class="card">
-          <div class="hd">
-            <div class="title">Dashboard</div>
-            <div class="sub">Gerencie carteira, upgrades e seu progresso.</div>
+          <div class="row">
+            <div class="title">Pontos</div>
+            <div class="pill" id="pointsValue">—</div>
           </div>
-          <div class="bd">
-            <div class="stats">
-              <div class="stat">
-                <div class="k">Pontos</div>
-                <div class="v" id="pointsValue">—</div>
-                <div class="mini" id="userIdMini">ID: —</div>
-              </div>
-              <div class="stat">
-                <div class="k">Itens no inventário</div>
-                <div class="v" id="invCount">—</div>
-                <div class="mini">Total</div>
-              </div>
-              <div class="stat">
-                <div class="k">Carteira</div>
-                <div class="v" id="walletStatus">—</div>
-                <div class="mini">TON Connect</div>
-              </div>
-            </div>
-
-            <div style="height:12px"></div>
-
-            <div class="btnrow">
-              <button class="btn primary" id="btnConnect">🔗 Conectar carteira</button>
-              <button class="btn ghost" id="btnRefresh">⟳ Atualizar</button>
-            </div>
-
-            <div style="height:14px"></div>
-
-            <!-- POOL & BOOST -->
-            <div class="card" style="box-shadow:none">
-              <div class="hd">
-                <div class="title">Pool & Boost</div>
-                <div class="sub">Assista anúncios para ganhar pontos e fortalecer sua conta.</div>
-              </div>
-              <div class="bd">
-                <div class="poolGrid">
-                  <div class="poolBox">
-                    <div class="k">Pool (total acumulado)</div>
-                    <div class="v" id="poolTotal">—</div>
-                  </div>
-                  <div class="poolBox">
-                    <div class="k">Pool (distribuído)</div>
-                    <div class="v" id="poolDistributed">—</div>
-                  </div>
-                  <div class="poolBox">
-                    <div class="k">Seu limite diário</div>
-                    <div class="v"><span id="adsUsed">—</span>/<span id="adsLimit">—</span></div>
-                  </div>
-                  <div class="poolBox">
-                    <div class="k">Cooldown</div>
-                    <div class="v" id="cooldownText">—</div>
-                  </div>
-                </div>
-
-                <div class="bar" title="Progresso diário">
-                  <div id="adsBar"></div>
-                </div>
-
-                <div style="height:10px"></div>
-
-                <button class="btn primary full" id="btnWatchAd">📺 Assistir anúncio e ganhar boost</button>
-                <div class="hint" id="adHint">
-                  Você ganha pontos base + boost (% dos seus itens). Transparência: a Pool mostra total e distribuído.
-                </div>
-              </div>
-            </div>
-
-            <div style="height:14px"></div>
-
-            <!-- LOJA -->
-            <div class="card" style="box-shadow:none">
-              <div class="hd">
-                <div class="title">Loja</div>
-                <div class="sub">Compre upgrades (quantos quiser).</div>
-              </div>
-              <div class="bd">
-                <div id="shopArea">Carregando loja…</div>
-              </div>
-            </div>
-
-          </div>
+          <div class="muted">ID: <span id="tgidValue">—</span></div>
+          <div class="muted">Seu referral: <span id="refCodeValue">—</span></div>
         </div>
 
-        <!-- DIREITA -->
         <div class="card">
-          <div class="hd">
-            <div class="title">Perfil & Inventário</div>
-            <div class="sub">Itens ativos e bônus de anúncio.</div>
-          </div>
-          <div class="bd">
-            <div id="profileArea" style="color:var(--muted);font-size:12px">Carregando perfil…</div>
-            <div style="height:10px"></div>
-            <div id="inventoryArea" class="inv"></div>
-            <div style="height:12px"></div>
-            <button class="btn ghost full" id="btnOpenHelp">💡 Como funciona</button>
+          <div class="title">Pool do dia (00:00 UTC distribui)</div>
+          <div class="grid2">
+            <div class="box">
+              <div class="muted">Pool (pontos hoje)</div>
+              <div class="big" id="poolTodayValue">—</div>
+            </div>
+            <div class="box">
+              <div class="muted">Sua participação hoje</div>
+              <div class="big" id="myPartValue">—</div>
+            </div>
           </div>
         </div>
+      </section>
 
+      <!-- SHOP -->
+      <section class="panel" id="tab-shop">
+        <div class="card">
+          <div class="title">Loja</div>
+          <div class="muted">Itens (por enquanto em pontos/farm). Pagamento TON real não incluído aqui.</div>
+        </div>
+
+        <div id="shopList" class="list">
+          <div class="muted">Carregando loja…</div>
+        </div>
+      </section>
+
+      <!-- AD -->
+      <section class="panel" id="tab-ad">
+        <div class="card">
+          <div class="title">Pool & Boost</div>
+          <div class="muted">Assistir anúncio: +1 ponto pra você +1 ponto no pool do dia.</div>
+          <button id="btnWatchAd" class="btn">📺 Assistir anúncio e ganhar +1</button>
+        </div>
+
+        <div class="card">
+          <div class="title">Perfil & Inventário</div>
+          <div class="muted">Seus itens ativos.</div>
+          <div id="inventoryList" class="list">
+            <div class="muted">Carregando inventário…</div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast">
+      <div class="toastHead">
+        <div id="toastTitle" class="toastTitle">—</div>
+        <button id="toastClose" class="toastClose">×</button>
       </div>
+      <div id="toastMsg" class="toastMsg">—</div>
     </div>
   </div>
 
-  <div class="toast" id="toast">
-    <div>
-      <div class="t" id="toastTitle">Info</div>
-      <div class="m" id="toastMsg">—</div>
-    </div>
-    <button class="x" id="toastClose">×</button>
-  </div>
-
-  <script src="app.js"></script>
+  <script src="/webapp/app.js?v=5"></script>
 </body>
 </html>

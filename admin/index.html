@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Admin - TON Game</title>
+  <style>
+    body{font-family:system-ui;margin:0;background:#0b1020;color:#eaf0ff}
+    header{padding:16px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:center}
+    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px;margin-bottom:14px}
+    input,button{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.2);color:#fff}
+    button{cursor:pointer}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.1);text-align:left;font-size:13px}
+    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .pill{padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:inline-block}
+  </style>
+</head>
+<body>
+<header>
+  <div><b>TON Game Admin</b> (acesso só navegador)</div>
+  <button onclick="loadAll()">Atualizar</button>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h3>Configurações</h3>
+    <label><input id="refEnabled" type="checkbox"/> Referrals ativos</label><br/>
+    <label><input id="promoEnabled" type="checkbox"/> Promo codes ativos</label><br/><br/>
+    <button onclick="saveConfig()">Salvar</button>
+    <div id="cfgMsg"></div>
+  </div>
+
+  <div class="card">
+    <h3>Criar Promo Code</h3>
+    <div class="row">
+      <input id="pCode" placeholder="CODIGO (ex: BONUS10)"/>
+      <input id="pPts" type="number" placeholder="Pontos (ex: 50)"/>
+      <input id="pUses" type="number" placeholder="Max uses (ex: 10)"/>
+      <button onclick="createPromo()">Criar</button>
+    </div>
+    <div id="promoMsg"></div>
+  </div>
+
+  <div class="card">
+    <h3>Promo Codes</h3>
+    <div id="promos"></div>
+  </div>
+
+  <div class="card">
+    <h3>Usuários (top 1000)</h3>
+    <div id="users"></div>
+  </div>
+</div>
+
+<script>
+async function jget(u){ return fetch(u).then(r=>r.json()); }
+async function jpost(u,b){ return fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(r=>r.json()); }
+
+async function loadAll(){
+  const cfg = await jget("/admin/api/config");
+  if (cfg.ok){
+    document.getElementById("refEnabled").checked = !!cfg.config.referrals_enabled;
+    document.getElementById("promoEnabled").checked = !!cfg.config.promo_enabled;
+  }
+
+  const promos = await jget("/admin/api/promos");
+  if (promos.ok){
+    const html = promos.promos.map(p=>`
+      <div class="card">
+        <div><b>${p.code}</b> <span class="pill">${p.points} pts</span> <span class="pill">${p.uses}/${p.max_uses}</span> <span class="pill">${p.active? "ATIVO":"OFF"}</span></div>
+        <button onclick="togglePromo('${p.code}', ${p.active?0:1})">${p.active? "Desativar":"Ativar"}</button>
+      </div>
+    `).join("");
+    document.getElementById("promos").innerHTML = html || "—";
+  }
+
+  const users = await jget("/admin/api/users");
+  if (users.ok){
+    const rows = users.users.map(u=>`
+      <tr>
+        <td>${u.tg_id}</td>
+        <td>${u.points}</td>
+        <td>${u.today_participation}</td>
+        <td>${u.referral_code||"—"}</td>
+        <td>${u.referrer_tg_id||"—"}</td>
+      </tr>
+    `).join("");
+    document.getElementById("users").innerHTML = `
+      <div class="pill">Dia UTC: ${users.day_key}</div>
+      <table>
+        <thead><tr><th>TG_ID</th><th>Pontos</th><th>Participações hoje</th><th>Meu code</th><th>Referrer</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+}
+
+async function saveConfig(){
+  const r = await jpost("/admin/api/config", {
+    referrals_enabled: document.getElementById("refEnabled").checked,
+    promo_enabled: document.getElementById("promoEnabled").checked
+  });
+  document.getElementById("cfgMsg").textContent = r.ok ? "✅ Salvo" : "❌ Erro";
+}
+
+async function createPromo(){
+  const code = document.getElementById("pCode").value.trim().toUpperCase();
+  const points = Number(document.getElementById("pPts").value||0);
+  const max_uses = Number(document.getElementById("pUses").value||0);
+  const r = await jpost("/admin/api/promos/create", { code, points, max_uses });
+  document.getElementById("promoMsg").textContent = r.ok ? "✅ Criado" : ("❌ "+(r.error||"erro"));
+  loadAll();
+}
+
+async function togglePromo(code, active){
+  const r = await jpost("/admin/api/promos/toggle", { code, active });
+  loadAll();
+}
+
+loadAll();
+</script>
+</body>
+</html>

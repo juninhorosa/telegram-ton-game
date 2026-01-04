@@ -1,34 +1,29 @@
-require('dotenv').config();
-
-const express = require('express');
-const path = require('path');
-const crypto = require('crypto');
-const TelegramBot = require('node-telegram-bot-api');
-const sqlite3 = require('sqlite3').verbose();
+require("dotenv").config();
+const express = require("express");
+const path = require("path");
+const crypto = require("crypto");
+const TelegramBot = require("node-telegram-bot-api");
+const sqlite3 = require("sqlite3").verbose();
 
 const app = express();
 app.use(express.json());
 
 // ================= ENV =================
-const BOT_TOKEN = (process.env.BOT_TOKEN || '').trim();
-const USE_WEBHOOK = (process.env.USE_WEBHOOK || '').trim() === '1';
+const BOT_TOKEN = (process.env.BOT_TOKEN || "").trim();
+const USE_WEBHOOK = (process.env.USE_WEBHOOK || "").trim() === "1";
 
 const BASE_URL = (
   (process.env.BASE_URL && process.env.BASE_URL.trim()) ||
   (process.env.RENDER_EXTERNAL_URL && process.env.RENDER_EXTERNAL_URL.trim()) ||
-  ''
-).replace(/\/$/, '');
+  ""
+).replace(/\/$/, "");
 
-const TON_RECEIVER_ADDRESS = (process.env.TON_RECEIVER_ADDRESS || '').trim();
+// Admin (recomendado por ENV, mas você pediu senha fixa)
+const ADMIN_USER = (process.env.ADMIN_USER || "admin").trim();
+const ADMIN_PASS = (process.env.ADMIN_PASS || "Valdenir1994#").trim();
 
-// Ads settings
-const AD_ESTIMATED_VALUE_USD = Number(process.env.AD_ESTIMATED_VALUE_USD || '0.01');
-const AD_COOLDOWN_SECONDS = Number(process.env.AD_COOLDOWN_SECONDS || '60');
-const AD_MIN_WATCH_SECONDS = Number(process.env.AD_MIN_WATCH_SECONDS || '20'); // ✅ recomendo 20+
-
-if (!BOT_TOKEN) console.error('❌ BOT_TOKEN vazio');
-if (!BASE_URL) console.error('❌ BASE_URL vazio');
-if (!TON_RECEIVER_ADDRESS) console.warn('⚠️ TON_RECEIVER_ADDRESS vazio (configure no Render)');
+if (!BOT_TOKEN) console.error("❌ BOT_TOKEN vazio");
+if (!BASE_URL) console.error("❌ BASE_URL vazio");
 
 // ================= BOT =================
 const bot = new TelegramBot(
@@ -36,14 +31,14 @@ const bot = new TelegramBot(
   USE_WEBHOOK ? { webHook: true } : { polling: true }
 );
 
-process.on('unhandledRejection', err => console.error('UnhandledRejection:', err));
+process.on("unhandledRejection", (err) => console.error("UnhandledRejection:", err));
 
 function isAbsoluteHttpUrl(u) {
   return /^https?:\/\/[^/]+/i.test(u);
 }
 
 // ================= DATABASE =================
-const db = new sqlite3.Database('./database.db');
+const db = new sqlite3.Database("./database.db");
 
 function dbRun(sql, params = []) {
   return new Promise((resolve, reject) => {
@@ -72,18 +67,22 @@ function dbAll(sql, params = []) {
 
 async function ensureColumn(table, col, typeSql) {
   const cols = await dbAll(`PRAGMA table_info(${table})`);
-  const exists = cols.some(c => c.name === col);
-  if (!exists) {
-    await dbRun(`ALTER TABLE ${table} ADD COLUMN ${col} ${typeSql}`);
-  }
+  const exists = cols.some((c) => c.name === col);
+  if (!exists) await dbRun(`ALTER TABLE ${table} ADD COLUMN ${col} ${typeSql}`);
 }
 
+function todayKeyUTC() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+}
+
+// ================= MIGRATE =================
 async function migrate() {
   await dbRun(`
     CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      tg_id TEXT UNIQUE,
+      tg_id TEXT PRIMARY KEY,
       points INTEGER DEFAULT 0,
+      referral_code TEXT UNIQUE,
+      referrer_tg_id TEXT DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
@@ -93,8 +92,8 @@ async function migrate() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       sku TEXT UNIQUE,
       name TEXT,
-      price_ton REAL,
-      points_per_day INTEGER,
+      price_ton REAL DEFAULT 0,
+      points_per_day INTEGER DEFAULT 0,
       ad_boost_pct INTEGER DEFAULT 0,
       max_ads_per_day INTEGER DEFAULT 10,
       active INTEGER DEFAULT 1
@@ -112,428 +111,485 @@ async function migrate() {
     )
   `);
 
+  // Anúncios: 1 ponto pro user + 1 pro pool por view
   await dbRun(`
-    CREATE TABLE IF NOT EXISTS purchases (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+    CREATE TABLE IF NOT EXISTS ad_sessions (
+      nonce TEXT PRIMARY KEY,
       tg_id TEXT NOT NULL,
-      item_id INTEGER NOT NULL,
-      ton_amount REAL NOT NULL,
-      receiver TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      tx_hash TEXT DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now')),
-      confirmed_at TEXT DEFAULT NULL
+      opened INTEGER DEFAULT 0,
+      opened_at TEXT DEFAULT NULL,
+      claimed INTEGER DEFAULT 0,
+      claimed_at TEXT DEFAULT NULL
     )
   `);
 
   await dbRun(`
-    CREATE TABLE IF NOT EXISTS ad_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
+    CREATE TABLE IF NOT EXISTS ad_participation (
+      day_key TEXT NOT NULL,
       tg_id TEXT NOT NULL,
-      event_type TEXT NOT NULL,
-      estimated_value_usd REAL DEFAULT 0,
-      user_share_points INTEGER DEFAULT 0,
-      pool_added_points INTEGER DEFAULT 0,
+      count INTEGER DEFAULT 0,
+      PRIMARY KEY(day_key, tg_id)
+    )
+  `);
+
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS pool_days (
+      day_key TEXT PRIMARY KEY,
+      pool_points INTEGER DEFAULT 0,
+      distributed INTEGER DEFAULT 0,
+      distributed_at TEXT DEFAULT NULL
+    )
+  `);
+
+  // Config admin
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS admin_config (
+      id INTEGER PRIMARY KEY CHECK (id=1),
+      referrals_enabled INTEGER DEFAULT 1,
+      promo_enabled INTEGER DEFAULT 1
+    )
+  `);
+  await dbRun(`INSERT OR IGNORE INTO admin_config (id) VALUES (1)`);
+
+  // Promo codes
+  await dbRun(`
+    CREATE TABLE IF NOT EXISTS promo_codes (
+      code TEXT PRIMARY KEY,
+      points INTEGER NOT NULL,
+      max_uses INTEGER NOT NULL,
+      uses INTEGER DEFAULT 0,
+      active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
 
+  // Promo redemptions
   await dbRun(`
-    CREATE TABLE IF NOT EXISTS user_ad_state (
-      tg_id TEXT PRIMARY KEY,
-      last_watch_at TEXT DEFAULT NULL,
-      watched_today INTEGER DEFAULT 0,
-      day_key TEXT DEFAULT NULL
-    )
-  `);
-
-  await dbRun(`
-    CREATE TABLE IF NOT EXISTS pool_state (
-      id INTEGER PRIMARY KEY CHECK (id=1),
-      pool_points_total INTEGER DEFAULT 0,
-      pool_points_distributed INTEGER DEFAULT 0,
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-  await dbRun(`INSERT OR IGNORE INTO pool_state (id) VALUES (1)`);
-
-  // ✅ ad_sessions
-  await dbRun(`
-    CREATE TABLE IF NOT EXISTS ad_sessions (
+    CREATE TABLE IF NOT EXISTS promo_redemptions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL,
       tg_id TEXT NOT NULL,
-      nonce TEXT UNIQUE NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
-      claimed_at TEXT DEFAULT NULL,
-      claimed INTEGER DEFAULT 0
+      UNIQUE(code, tg_id)
     )
   `);
 
-  // ✅ adiciona colunas caso já exista tabela antiga
-  await ensureColumn('ad_sessions', 'opened', 'INTEGER DEFAULT 0');
-  await ensureColumn('ad_sessions', 'opened_at', 'TEXT DEFAULT NULL');
-
-  // seed itens
+  // Seed itens (mantém loja de pontos – sem TON)
   const c = await dbGet(`SELECT COUNT(*) AS c FROM items`);
-  if (c && c.c === 0) {
+  if (c?.c === 0) {
     const items = [
-      ['TRIAL_MINER', 'Trial Miner (Grátis 3 dias)', 0, 5, 20, 10],
-      ['PACK_45', 'Pack Starter', 0.05, 10, 10, 10],
-      ['PACK_30', 'Pack Growth',  0.12, 28, 12, 12],
-      ['PACK_21', 'Pack Builder', 0.25, 70, 15, 14],
-      ['PACK_14', 'Pack Pro',     0.45, 160, 18, 16],
-      ['PACK_7',  'Pack Elite',   0.90, 420, 22, 20],
+      ["TRIAL_MINER", "Trial Miner (Grátis 3 dias)", 0, 5, 0, 10],
+      ["PACK_A", "Pack Starter", 0, 10, 0, 10],
+      ["PACK_B", "Pack Growth", 0, 25, 0, 12],
+      ["PACK_C", "Pack Builder", 0, 60, 0, 14],
+      ["PACK_D", "Pack Pro", 0, 120, 0, 16],
+      ["PACK_E", "Pack Elite", 0, 250, 0, 20],
     ];
     for (const it of items) {
       await dbRun(
-        `INSERT INTO items (sku, name, price_ton, points_per_day, ad_boost_pct, max_ads_per_day)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO items (sku,name,price_ton,points_per_day,ad_boost_pct,max_ads_per_day) VALUES (?,?,?,?,?,?)`,
         it
       );
     }
-    console.log('✅ Seed: trial + 5 packs criado');
+    console.log("✅ Seed itens criado");
   }
+
+  // colunas antigas (caso existam)
+  await ensureColumn("users", "referral_code", "TEXT UNIQUE");
+  await ensureColumn("users", "referrer_tg_id", "TEXT DEFAULT NULL");
+
+  console.log("✅ Migrate OK");
 }
 
-async function grantTrialIfNew(tg_id) {
-  await dbRun(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [tg_id]);
+// ================= BUSINESS =================
+function genReferralCode() {
+  return crypto.randomBytes(4).toString("hex").toUpperCase(); // 8 chars
+}
 
-  const hasTrial = await dbGet(
-    `SELECT inv.id FROM inventory inv
-     JOIN items i ON i.id=inv.item_id
-     WHERE inv.tg_id=? AND i.sku='TRIAL_MINER' LIMIT 1`,
-    [tg_id]
-  );
-  if (hasTrial) return { granted: false };
+async function ensureUser(tg_id) {
+  const uid = String(tg_id || "");
+  if (!uid) return null;
 
-  const trial = await dbGet(`SELECT id FROM items WHERE sku='TRIAL_MINER' LIMIT 1`);
-  if (!trial) return { granted: false };
+  const u = await dbGet(`SELECT tg_id FROM users WHERE tg_id=?`, [uid]);
+  if (!u) {
+    // cria com referral_code único
+    let code = genReferralCode();
+    while (await dbGet(`SELECT 1 FROM users WHERE referral_code=?`, [code])) {
+      code = genReferralCode();
+    }
+    await dbRun(`INSERT INTO users (tg_id, referral_code) VALUES (?, ?)`, [uid, code]);
 
+    // trial
+    const trial = await dbGet(`SELECT id FROM items WHERE sku='TRIAL_MINER' LIMIT 1`);
+    if (trial) {
+      await dbRun(
+        `INSERT INTO inventory (tg_id,item_id,quantity,expires_at)
+         VALUES (?, ?, 1, datetime('now', '+3 days'))
+         ON CONFLICT(tg_id, item_id) DO NOTHING`,
+        [uid, trial.id]
+      );
+    }
+  }
+  return await dbGet(`SELECT * FROM users WHERE tg_id=?`, [uid]);
+}
+
+async function applyReferralIfEnabled(newUserId, referralCode) {
+  const cfg = await dbGet(`SELECT referrals_enabled FROM admin_config WHERE id=1`);
+  if (!cfg || Number(cfg.referrals_enabled) !== 1) return;
+
+  const code = String(referralCode || "").trim().toUpperCase();
+  if (!code) return;
+
+  const ref = await dbGet(`SELECT tg_id FROM users WHERE referral_code=? LIMIT 1`, [code]);
+  if (!ref) return;
+
+  // não auto-refer
+  if (String(ref.tg_id) === String(newUserId)) return;
+
+  const u = await dbGet(`SELECT referrer_tg_id FROM users WHERE tg_id=?`, [newUserId]);
+  if (u?.referrer_tg_id) return; // já setado
+
+  await dbRun(`UPDATE users SET referrer_tg_id=? WHERE tg_id=?`, [ref.tg_id, newUserId]);
+}
+
+// ================= DAILY DISTRIBUTION (00:00 UTC) =================
+async function distributePoolForDay(dayKey) {
+  // garante registro do dia
   await dbRun(
-    `INSERT INTO inventory (tg_id, item_id, quantity, expires_at)
-     VALUES (?, ?, 1, datetime('now', '+3 days'))
-     ON CONFLICT(tg_id, item_id) DO NOTHING`,
-    [tg_id, trial.id]
+    `INSERT OR IGNORE INTO pool_days (day_key, pool_points, distributed) VALUES (?, 0, 0)`,
+    [dayKey]
   );
-  return { granted: true };
+
+  const day = await dbGet(`SELECT * FROM pool_days WHERE day_key=?`, [dayKey]);
+  if (!day) return;
+  if (Number(day.distributed) === 1) return; // já distribuiu
+
+  const poolPoints = Number(day.pool_points || 0);
+  if (poolPoints <= 0) {
+    await dbRun(`UPDATE pool_days SET distributed=1, distributed_at=datetime('now') WHERE day_key=?`, [dayKey]);
+    return;
+  }
+
+  const rows = await dbAll(`SELECT tg_id, count FROM ad_participation WHERE day_key=? AND count>0`, [dayKey]);
+  const totalTickets = rows.reduce((a, r) => a + Number(r.count || 0), 0);
+  if (totalTickets <= 0) {
+    await dbRun(`UPDATE pool_days SET distributed=1, distributed_at=datetime('now') WHERE day_key=?`, [dayKey]);
+    return;
+  }
+
+  // distribuição proporcional por participação (1 anúncio = 1 ticket)
+  // pontos por ticket (inteiro)
+  const perTicket = Math.floor(poolPoints / totalTickets);
+  let remainder = poolPoints - perTicket * totalTickets;
+
+  for (const r of rows) {
+    const t = Number(r.count || 0);
+    let gain = perTicket * t;
+
+    // distribui resto 1 por 1
+    if (remainder > 0) {
+      const extra = Math.min(remainder, t);
+      gain += extra;
+      remainder -= extra;
+    }
+
+    if (gain > 0) {
+      await dbRun(`UPDATE users SET points=points + ? WHERE tg_id=?`, [gain, r.tg_id]);
+    }
+  }
+
+  await dbRun(`UPDATE pool_days SET distributed=1, distributed_at=datetime('now') WHERE day_key=?`, [dayKey]);
+  console.log(`✅ Pool distribuído para ${dayKey}: ${poolPoints} pts`);
 }
 
-// ================= BOT /start =================
-bot.onText(/\/start/, async (msg) => {
+// scheduler simples: checa a cada 30s se virou 00:00 UTC
+let lastDistributedKey = null;
+setInterval(async () => {
+  try {
+    const now = new Date();
+    const hh = now.getUTCHours();
+    const mm = now.getUTCMinutes();
+    const key = todayKeyUTC();
+
+    // Distribui sempre o DIA ANTERIOR ao virar 00:00
+    // Ex: 00:00 do dia 2026-01-04 distribui 2026-01-03
+    if (hh === 0 && mm === 0 && lastDistributedKey !== key) {
+      const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+      await distributePoolForDay(yesterday);
+      lastDistributedKey = key;
+    }
+  } catch (e) {
+    console.error("distribution loop error:", e);
+  }
+}, 30000);
+
+// ================= TELEGRAM /start =================
+bot.onText(/\/start(?:\s+(\S+))?/, async (msg, match) => {
   const tgId = String(msg.from.id);
-  await grantTrialIfNew(tgId);
+  const refCode = match?.[1] || "";
+  await ensureUser(tgId);
+  if (refCode) await applyReferralIfEnabled(tgId, refCode);
 
   const webAppUrl = `${BASE_URL}/webapp/index.html?tg_id=${encodeURIComponent(tgId)}`;
-
   if (!isAbsoluteHttpUrl(webAppUrl)) {
-    bot.sendMessage(tgId, '❌ Erro: BASE_URL inválido no servidor.');
+    bot.sendMessage(tgId, "❌ Erro: BASE_URL inválido no servidor.");
     return;
   }
 
   bot.sendMessage(
     tgId,
-    `🎮 TON Game
+    `🎮 TON GAME (Pontos)
+📺 Anúncio = +1 ponto +1 pool
+🕛 00:00 UTC pool distribui por participação
+🎁 Use /promo CODIGO para resgatar (se ativo)
+👥 Seu referral: /start ${((await dbGet(`SELECT referral_code FROM users WHERE tg_id=?`, [tgId]))?.referral_code) || ""}
 
-✅ Trial (3 dias)
-📺 Anúncio externo + reward ao voltar ao Telegram
-🛒 Packs compráveis ilimitado`,
-    { reply_markup: { inline_keyboard: [[{ text: '▶️ Abrir Jogo', web_app: { url: webAppUrl } }]] } }
+`,
+    { reply_markup: { inline_keyboard: [[{ text: "▶️ Abrir Jogo", web_app: { url: webAppUrl } }]] } }
   );
 });
 
+// ================= PROMO command =================
+bot.onText(/\/promo\s+(\S+)/, async (msg, match) => {
+  const tgId = String(msg.from.id);
+  const code = String(match?.[1] || "").trim().toUpperCase();
+  await ensureUser(tgId);
+
+  const cfg = await dbGet(`SELECT promo_enabled FROM admin_config WHERE id=1`);
+  if (!cfg || Number(cfg.promo_enabled) !== 1) {
+    bot.sendMessage(tgId, "❌ Promo codes estão desativados no momento.");
+    return;
+  }
+
+  const promo = await dbGet(`SELECT * FROM promo_codes WHERE code=? AND active=1`, [code]);
+  if (!promo) {
+    bot.sendMessage(tgId, "❌ Código inválido.");
+    return;
+  }
+  if (Number(promo.uses) >= Number(promo.max_uses)) {
+    bot.sendMessage(tgId, "❌ Código esgotado.");
+    return;
+  }
+
+  const already = await dbGet(`SELECT 1 FROM promo_redemptions WHERE code=? AND tg_id=?`, [code, tgId]);
+  if (already) {
+    bot.sendMessage(tgId, "⚠️ Você já usou esse código.");
+    return;
+  }
+
+  await dbRun(`INSERT INTO promo_redemptions (code, tg_id) VALUES (?, ?)`, [code, tgId]);
+  await dbRun(`UPDATE promo_codes SET uses = uses + 1 WHERE code=?`, [code]);
+  await dbRun(`UPDATE users SET points = points + ? WHERE tg_id=?`, [Number(promo.points), tgId]);
+
+  bot.sendMessage(tgId, `✅ Promo resgatado! +${promo.points} pontos`);
+});
+
 // ================= API =================
-app.get('/api/items', async (req, res) => {
+app.get("/api/me", async (req, res) => {
+  try {
+    const tg_id = String(req.query.tg_id || "");
+    if (!tg_id) return res.status(400).json({ ok: false, error: "missing_tg_id" });
+
+    const u = await ensureUser(tg_id);
+    const inv = await dbAll(
+      `SELECT i.id, i.sku, i.name, inv.quantity, inv.expires_at, i.points_per_day
+       FROM inventory inv JOIN items i ON i.id=inv.item_id
+       WHERE inv.tg_id=? ORDER BY i.id ASC`,
+      [tg_id]
+    );
+
+    const dayKey = todayKeyUTC();
+    const myTickets = await dbGet(
+      `SELECT count FROM ad_participation WHERE day_key=? AND tg_id=?`,
+      [dayKey, tg_id]
+    );
+
+    const dayPool = await dbGet(`SELECT pool_points, distributed FROM pool_days WHERE day_key=?`, [dayKey]);
+
+    res.json({
+      ok: true,
+      user: u,
+      inventory: inv,
+      today: {
+        day_key: dayKey,
+        my_participation: Number(myTickets?.count || 0),
+        pool_points_today: Number(dayPool?.pool_points || 0),
+        distributed: Number(dayPool?.distributed || 0)
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error", details: String(e.message || e) });
+  }
+});
+
+app.get("/api/items", async (req, res) => {
   try {
     const rows = await dbAll(
-      `SELECT id, sku, name, price_ton, points_per_day, ad_boost_pct, max_ads_per_day
+      `SELECT id, sku, name, price_ton, points_per_day, active
        FROM items WHERE active=1 ORDER BY id ASC`
     );
     res.json({ ok: true, items: rows });
   } catch {
-    res.status(500).json({ ok: false, error: 'db_error' });
+    res.status(500).json({ ok: false, error: "db_error" });
   }
 });
 
-app.get('/api/me', async (req, res) => {
+app.get("/api/pool", async (req, res) => {
   try {
-    const tg_id = String(req.query.tg_id || '');
-    if (!tg_id) return res.status(400).json({ ok: false, error: 'missing_tg_id' });
-
-    await grantTrialIfNew(tg_id);
-
-    const user = await dbGet(`SELECT tg_id, points FROM users WHERE tg_id=?`, [tg_id]);
-    if (!user) return res.status(500).json({ ok: false, error: 'db_error' });
-
-    const inv = await dbAll(
-      `SELECT i.id, i.sku, i.name, inv.quantity, inv.expires_at, i.points_per_day, i.ad_boost_pct, i.max_ads_per_day
-       FROM inventory inv
-       JOIN items i ON i.id = inv.item_id
-       WHERE inv.tg_id=?
-       ORDER BY i.id ASC`,
-      [tg_id]
-    );
-
-    const st = await dbGet(`SELECT * FROM user_ad_state WHERE tg_id=?`, [tg_id]);
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const watchedToday = (st && st.day_key === todayKey) ? Number(st.watched_today || 0) : 0;
-
-    const limRow = await dbGet(
-      `SELECT COALESCE(MAX(i.max_ads_per_day), 10) AS lim
-       FROM inventory inv
-       JOIN items i ON i.id = inv.item_id
-       WHERE inv.tg_id=?`,
-      [tg_id]
-    );
-
-    res.json({
-      ok: true,
-      user,
-      inventory: inv,
-      ads: {
-        watched_today: watchedToday,
-        daily_limit: Number(limRow?.lim || 10),
-        cooldown_seconds: AD_COOLDOWN_SECONDS,
-        min_watch_seconds: AD_MIN_WATCH_SECONDS,
-        last_watch_at: st?.last_watch_at || null
-      }
-    });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: 'server_error', details: String(e.message || e) });
-  }
-});
-
-app.get('/api/pool', async (req, res) => {
-  try {
-    const row = await dbGet(`SELECT pool_points_total, pool_points_distributed, updated_at FROM pool_state WHERE id=1`);
-    res.json({ ok: true, pool: row });
+    const dayKey = todayKeyUTC();
+    await dbRun(`INSERT OR IGNORE INTO pool_days (day_key, pool_points, distributed) VALUES (?,0,0)`, [dayKey]);
+    const day = await dbGet(`SELECT * FROM pool_days WHERE day_key=?`, [dayKey]);
+    res.json({ ok: true, day });
   } catch {
-    res.status(500).json({ ok: false, error: 'db_error' });
+    res.status(500).json({ ok: false, error: "db_error" });
   }
 });
 
-// ================= ADS: START =================
-app.post('/api/ad/start', async (req, res) => {
+// ===== Ads flow: start/opened/claim =====
+app.post("/api/ad/start", async (req, res) => {
   try {
-    const { tg_id } = req.body || {};
-    const uid = String(tg_id || '');
-    if (!uid) return res.status(400).json({ ok: false, error: 'missing_tg_id' });
+    const tg_id = String(req.body?.tg_id || "");
+    if (!tg_id) return res.status(400).json({ ok: false, error: "missing_tg_id" });
 
-    await dbRun(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [uid]);
-
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const st = await dbGet(`SELECT * FROM user_ad_state WHERE tg_id=?`, [uid]);
-
-    const now = Date.now();
-    const lastMs = st?.last_watch_at ? Date.parse(st.last_watch_at) : 0;
-    const cooldownMs = AD_COOLDOWN_SECONDS * 1000;
-    const watchedToday = (st && st.day_key === todayKey) ? Number(st.watched_today || 0) : 0;
-
-    if (lastMs && (now - lastMs) < cooldownMs) {
-      const wait = Math.ceil((cooldownMs - (now - lastMs)) / 1000);
-      return res.json({ ok: false, error: 'cooldown', wait_seconds: wait });
-    }
-
-    const limRow = await dbGet(
-      `SELECT COALESCE(MAX(i.max_ads_per_day), 10) AS lim
-       FROM inventory inv
-       JOIN items i ON i.id = inv.item_id
-       WHERE inv.tg_id=?`,
-      [uid]
-    );
-    const lim = Number(limRow?.lim || 10);
-
-    if (watchedToday >= lim) {
-      return res.json({ ok: false, error: 'daily_limit', limit: lim });
-    }
-
-    const nonce = crypto.randomBytes(16).toString('hex');
-    await dbRun(`INSERT INTO ad_sessions (tg_id, nonce, opened, opened_at) VALUES (?, ?, 0, NULL)`, [uid, nonce]);
-
-    res.json({
-      ok: true,
-      nonce,
-      min_watch_seconds: AD_MIN_WATCH_SECONDS,
-      cooldown_seconds: AD_COOLDOWN_SECONDS,
-      daily_limit: lim,
-      watched_today: watchedToday
-    });
+    await ensureUser(tg_id);
+    const nonce = crypto.randomBytes(16).toString("hex");
+    await dbRun(`INSERT INTO ad_sessions (nonce, tg_id) VALUES (?, ?)`, [nonce, tg_id]);
+    res.json({ ok: true, nonce, min_watch_seconds: 20 });
   } catch (e) {
-    res.status(500).json({ ok: false, error: 'server_error', details: String(e.message || e) });
+    res.status(500).json({ ok: false, error: "server_error", details: String(e.message || e) });
   }
 });
 
-// ✅ ADS: OPENED (marca que o usuário realmente abriu o anúncio)
-app.post('/api/ad/opened', async (req, res) => {
+app.post("/api/ad/opened", async (req, res) => {
   try {
-    const { tg_id, nonce } = req.body || {};
-    const uid = String(tg_id || '');
-    const n = String(nonce || '');
-    if (!uid || !n) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    const tg_id = String(req.body?.tg_id || "");
+    const nonce = String(req.body?.nonce || "");
+    if (!tg_id || !nonce) return res.status(400).json({ ok: false, error: "missing_fields" });
 
-    const sess = await dbGet(`SELECT * FROM ad_sessions WHERE nonce=? LIMIT 1`, [n]);
-    if (!sess) return res.json({ ok: false, error: 'invalid_nonce' });
-    if (String(sess.tg_id) !== uid) return res.json({ ok: false, error: 'nonce_not_owner' });
-    if (Number(sess.claimed || 0) === 1) return res.json({ ok: false, error: 'already_claimed' });
-
-    // marca aberto somente uma vez
-    if (Number(sess.opened || 0) === 0) {
-      await dbRun(`UPDATE ad_sessions SET opened=1, opened_at=datetime('now') WHERE nonce=?`, [n]);
+    const s = await dbGet(`SELECT * FROM ad_sessions WHERE nonce=?`, [nonce]);
+    if (!s) return res.json({ ok: false, error: "invalid_nonce" });
+    if (String(s.tg_id) !== tg_id) return res.json({ ok: false, error: "nonce_not_owner" });
+    if (Number(s.opened) === 0) {
+      await dbRun(`UPDATE ad_sessions SET opened=1, opened_at=datetime('now') WHERE nonce=?`, [nonce]);
     }
-
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ ok: false, error: 'server_error', details: String(e.message || e) });
+    res.status(500).json({ ok: false, error: "server_error", details: String(e.message || e) });
   }
 });
 
-// ================= ADS: CLAIM =================
-app.post('/api/ad/claim', async (req, res) => {
+app.post("/api/ad/claim", async (req, res) => {
   try {
-    const { tg_id, nonce } = req.body || {};
-    const uid = String(tg_id || '');
-    const n = String(nonce || '');
-    if (!uid || !n) return res.status(400).json({ ok: false, error: 'missing_fields' });
+    const tg_id = String(req.body?.tg_id || "");
+    const nonce = String(req.body?.nonce || "");
+    if (!tg_id || !nonce) return res.status(400).json({ ok: false, error: "missing_fields" });
 
-    const sess = await dbGet(`SELECT * FROM ad_sessions WHERE nonce=? LIMIT 1`, [n]);
-    if (!sess) return res.json({ ok: false, error: 'invalid_nonce' });
-    if (String(sess.tg_id) !== uid) return res.json({ ok: false, error: 'nonce_not_owner' });
-    if (Number(sess.claimed || 0) === 1) return res.json({ ok: false, error: 'already_claimed' });
+    const s = await dbGet(`SELECT * FROM ad_sessions WHERE nonce=?`, [nonce]);
+    if (!s) return res.json({ ok: false, error: "invalid_nonce" });
+    if (String(s.tg_id) !== tg_id) return res.json({ ok: false, error: "nonce_not_owner" });
+    if (Number(s.claimed) === 1) return res.json({ ok: false, error: "already_claimed" });
+    if (Number(s.opened) !== 1 || !s.opened_at) return res.json({ ok: false, error: "not_opened" });
 
-    // ✅ só libera se realmente abriu
-    if (Number(sess.opened || 0) !== 1 || !sess.opened_at) {
-      return res.json({ ok: false, error: 'not_opened' });
-    }
-
-    // ✅ valida tempo mínimo desde opened_at
-    const openedMs = Date.parse(sess.opened_at);
+    // tempo mínimo (20s)
+    const openedMs = Date.parse(s.opened_at);
     const elapsed = (Date.now() - openedMs) / 1000;
-    if (elapsed < AD_MIN_WATCH_SECONDS) {
-      return res.json({
-        ok: false,
-        error: 'too_fast',
-        need_seconds: AD_MIN_WATCH_SECONDS,
-        elapsed_seconds: Math.floor(elapsed)
-      });
-    }
+    if (elapsed < 20) return res.json({ ok: false, error: "too_fast", need: 20, elapsed: Math.floor(elapsed) });
 
-    // limite diário/cooldown
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const st = await dbGet(`SELECT * FROM user_ad_state WHERE tg_id=?`, [uid]);
-    const watchedToday = (st && st.day_key === todayKey) ? Number(st.watched_today || 0) : 0;
+    // ✅ Recompensa fixa: +1 ponto user +1 ponto pool
+    await dbRun(`UPDATE users SET points=points + 1 WHERE tg_id=?`, [tg_id]);
 
-    const limRow = await dbGet(
-      `SELECT COALESCE(MAX(i.max_ads_per_day), 10) AS lim
-       FROM inventory inv
-       JOIN items i ON i.id = inv.item_id
-       WHERE inv.tg_id=?`,
-      [uid]
-    );
-    const lim = Number(limRow?.lim || 10);
-    if (watchedToday >= lim) return res.json({ ok: false, error: 'daily_limit', limit: lim });
-
-    const boostRow = await dbGet(
-      `SELECT COALESCE(MAX(i.ad_boost_pct), 0) AS b
-       FROM inventory inv
-       JOIN items i ON i.id = inv.item_id
-       WHERE inv.tg_id=?`,
-      [uid]
-    );
-    const boostPct = Number(boostRow?.b || 0);
-
-    // calcula pontos
-    const basePointsPerUsd = 100;
-    const estUsd = AD_ESTIMATED_VALUE_USD;
-    const poolAddedPoints = Math.max(1, Math.floor(estUsd * basePointsPerUsd));
-    const userBase = estUsd * basePointsPerUsd * 0.10;
-    const userSharePoints = Math.max(1, Math.floor(userBase * (1 + boostPct / 100)));
-
-    await dbRun(`UPDATE users SET points = points + ? WHERE tg_id=?`, [userSharePoints, uid]);
+    const dayKey = todayKeyUTC();
+    await dbRun(`INSERT OR IGNORE INTO pool_days (day_key, pool_points, distributed) VALUES (?,0,0)`, [dayKey]);
+    await dbRun(`UPDATE pool_days SET pool_points = pool_points + 1 WHERE day_key=?`, [dayKey]);
 
     await dbRun(
-      `INSERT INTO ad_events (tg_id, event_type, estimated_value_usd, user_share_points, pool_added_points)
-       VALUES (?, 'watch', ?, ?, ?)`,
-      [uid, estUsd, userSharePoints, poolAddedPoints]
+      `INSERT INTO ad_participation (day_key, tg_id, count) VALUES (?, ?, 1)
+       ON CONFLICT(day_key, tg_id) DO UPDATE SET count = count + 1`,
+      [dayKey, tg_id]
     );
 
-    await dbRun(
-      `UPDATE pool_state
-       SET pool_points_total = pool_points_total + ?,
-           pool_points_distributed = pool_points_distributed + ?,
-           updated_at = datetime('now')
-       WHERE id=1`,
-      [poolAddedPoints, userSharePoints]
-    );
+    await dbRun(`UPDATE ad_sessions SET claimed=1, claimed_at=datetime('now') WHERE nonce=?`, [nonce]);
 
-    await dbRun(
-      `INSERT INTO user_ad_state (tg_id, last_watch_at, watched_today, day_key)
-       VALUES (?, datetime('now'), ?, ?)
-       ON CONFLICT(tg_id) DO UPDATE SET
-         last_watch_at=excluded.last_watch_at,
-         watched_today=excluded.watched_today,
-         day_key=excluded.day_key`,
-      [uid, watchedToday + 1, todayKey]
-    );
-
-    await dbRun(`UPDATE ad_sessions SET claimed=1, claimed_at=datetime('now') WHERE nonce=?`, [n]);
-
-    res.json({
-      ok: true,
-      user_share_points: userSharePoints,
-      pool_added_points: poolAddedPoints,
-      boost_pct: boostPct,
-      watched_today: watchedToday + 1,
-      daily_limit: lim
-    });
+    res.json({ ok: true, user_points_added: 1, pool_points_added: 1, day_key: dayKey });
   } catch (e) {
-    res.status(500).json({ ok: false, error: 'server_error', details: String(e.message || e) });
+    res.status(500).json({ ok: false, error: "server_error", details: String(e.message || e) });
   }
 });
 
-// ===== Compra create (TON) =====
-app.post('/api/purchase/create', async (req, res) => {
-  try {
-    const { tg_id, item_id } = req.body || {};
-    const uid = String(tg_id || '');
-    const itemId = Number(item_id || 0);
-
-    if (!uid || !itemId) return res.status(400).json({ ok: false, error: 'missing_fields' });
-    if (!TON_RECEIVER_ADDRESS) return res.status(500).json({ ok: false, error: 'receiver_not_set' });
-
-    const item = await dbGet(`SELECT id, sku, name, price_ton FROM items WHERE id=? AND active=1`, [itemId]);
-    if (!item) return res.status(404).json({ ok: false, error: 'item_not_found' });
-    if (Number(item.price_ton) <= 0) return res.status(400).json({ ok: false, error: 'not_purchasable' });
-
-    await dbRun(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [uid]);
-
-    const ins = await dbRun(
-      `INSERT INTO purchases (tg_id, item_id, ton_amount, receiver, status)
-       VALUES (?, ?, ?, ?, 'pending')`,
-      [uid, itemId, Number(item.price_ton), TON_RECEIVER_ADDRESS]
-    );
-
-    res.json({
-      ok: true,
-      purchase_id: ins.lastID,
-      receiver: TON_RECEIVER_ADDRESS,
-      amount_ton: Number(item.price_ton),
-      sku: item.sku,
-      name: item.name
-    });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: 'server_error', details: String(e.message || e) });
+// ================= ADMIN (BASIC AUTH) =================
+function basicAuth(req, res, next) {
+  const h = req.headers.authorization || "";
+  if (!h.startsWith("Basic ")) {
+    res.setHeader("WWW-Authenticate", 'Basic realm="Admin"');
+    return res.status(401).send("Auth required");
   }
+  const decoded = Buffer.from(h.slice(6), "base64").toString("utf8");
+  const [u, p] = decoded.split(":");
+  if (u === ADMIN_USER && p === ADMIN_PASS) return next();
+  res.setHeader("WWW-Authenticate", 'Basic realm="Admin"');
+  return res.status(401).send("Invalid credentials");
+}
+
+app.use("/admin", basicAuth, express.static(path.join(__dirname, "admin")));
+
+app.get("/admin/api/users", basicAuth, async (req, res) => {
+  try {
+    const dayKey = todayKeyUTC();
+    const rows = await dbAll(`
+      SELECT u.tg_id, u.points, u.referral_code, u.referrer_tg_id,
+             COALESCE(p.count,0) AS today_participation
+      FROM users u
+      LEFT JOIN ad_participation p ON p.tg_id=u.tg_id AND p.day_key=?
+      ORDER BY u.points DESC
+      LIMIT 1000
+    `, [dayKey]);
+    res.json({ ok: true, users: rows, day_key: dayKey });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "server_error", details: String(e.message || e) });
+  }
+});
+
+app.get("/admin/api/config", basicAuth, async (req, res) => {
+  const cfg = await dbGet(`SELECT * FROM admin_config WHERE id=1`);
+  res.json({ ok: true, config: cfg });
+});
+
+app.post("/admin/api/config", basicAuth, async (req, res) => {
+  const referrals_enabled = Number(req.body?.referrals_enabled ? 1 : 0);
+  const promo_enabled = Number(req.body?.promo_enabled ? 1 : 0);
+  await dbRun(`UPDATE admin_config SET referrals_enabled=?, promo_enabled=? WHERE id=1`, [referrals_enabled, promo_enabled]);
+  res.json({ ok: true });
+});
+
+app.get("/admin/api/promos", basicAuth, async (req, res) => {
+  const rows = await dbAll(`SELECT * FROM promo_codes ORDER BY created_at DESC LIMIT 200`);
+  res.json({ ok: true, promos: rows });
+});
+
+app.post("/admin/api/promos/create", basicAuth, async (req, res) => {
+  const code = String(req.body?.code || "").trim().toUpperCase();
+  const points = Number(req.body?.points || 0);
+  const max_uses = Number(req.body?.max_uses || 0);
+  if (!code || points <= 0 || max_uses <= 0) return res.status(400).json({ ok: false, error: "invalid_fields" });
+
+  await dbRun(`INSERT INTO promo_codes (code, points, max_uses, uses, active) VALUES (?, ?, ?, 0, 1)`, [code, points, max_uses]);
+  res.json({ ok: true });
+});
+
+app.post("/admin/api/promos/toggle", basicAuth, async (req, res) => {
+  const code = String(req.body?.code || "").trim().toUpperCase();
+  const active = Number(req.body?.active ? 1 : 0);
+  await dbRun(`UPDATE promo_codes SET active=? WHERE code=?`, [active, code]);
+  res.json({ ok: true });
 });
 
 // ================= STATIC =================
-app.use('/webapp', express.static(path.join(__dirname, 'webapp')));
-
-// ================= DEBUG =================
-app.get('/health', (req, res) => res.send('ok'));
+app.use("/webapp", express.static(path.join(__dirname, "webapp")));
+app.get("/health", (req, res) => res.send("ok"));
 
 if (USE_WEBHOOK) {
   const secretPath = `/telegram-webhook/${BOT_TOKEN}`;
-
-  app.get(secretPath, (req, res) => res.status(200).send('Webhook endpoint OK (use POST).'));
 
   app.post(secretPath, (req, res) => {
     bot.processUpdate(req.body);
@@ -542,17 +598,18 @@ if (USE_WEBHOOK) {
 
   (async () => {
     const webhookUrl = `${BASE_URL}${secretPath}`;
-    console.log('✅ Setting webhook:', webhookUrl);
+    console.log("✅ Setting webhook to:", webhookUrl);
     await bot.deleteWebHook({ drop_pending_updates: true });
     await bot.setWebHook(webhookUrl);
   })().catch(console.error);
 }
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 migrate().then(() => {
   app.listen(PORT, () => {
-    console.log('Servidor rodando na porta', PORT);
-    console.log('BASE_URL:', BASE_URL);
-    console.log('MODE:', USE_WEBHOOK ? 'WEBHOOK' : 'POLLING');
+    console.log("Servidor rodando na porta", PORT);
+    console.log("BASE_URL:", BASE_URL);
+    console.log("MODE:", USE_WEBHOOK ? "WEBHOOK" : "POLLING");
+    console.log("ADMIN URL:", `${BASE_URL}/admin/`);
   });
 });

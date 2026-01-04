@@ -1,86 +1,37 @@
 <!doctype html>
 <html lang="pt">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
   <title>Anúncio</title>
-  <style>
-    :root{
-      --bg:#050912; --text:#EAF0FF; --muted: rgba(234,240,255,.75);
-      --stroke: rgba(255,255,255,.12); --accent:#7c5cff; --accent2:#2ee9a6;
-      --warn:#ffcf7a; --bad:#ff6b6b;
-    }
-    *{box-sizing:border-box}
-    body{
-      margin:0; height:100vh; width:100vw; overflow:hidden;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
-      background:
-        radial-gradient(900px 500px at 15% 0%, rgba(124,92,255,.25), transparent 55%),
-        radial-gradient(900px 500px at 85% 20%, rgba(46,233,166,.18), transparent 60%),
-        linear-gradient(180deg, #060A14, var(--bg));
-      color: var(--text);
-      display:flex; flex-direction:column;
-    }
-    .top{
-      padding:14px; border-bottom:1px solid rgba(255,255,255,.06);
-      background: rgba(0,0,0,.25); backdrop-filter: blur(14px);
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-    }
-    .ttl{font-weight:900;font-size:14px}
-    .pill{
-      padding:8px 12px; border-radius:999px; border:1px solid var(--stroke);
-      background: rgba(0,0,0,.25); color: var(--muted); font-size:12px; white-space:nowrap;
-    }
-    .wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:14px;}
-    .card{
-      width:min(540px, 100%);
-      border:1px solid rgba(255,255,255,.12);
-      background: rgba(0,0,0,.22);
-      border-radius:18px;
-      padding:16px;
-    }
-    .h{font-weight:900;margin:0 0 8px}
-    .p{margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.35}
-    .btn{
-      width:100%;
-      border:0;
-      padding: 14px;
-      border-radius: 14px;
-      font-weight:900;
-      cursor:pointer;
-      background: linear-gradient(135deg,var(--accent),var(--accent2));
-      color:#061018;
-    }
-    .btn.gray{
-      background: rgba(255,255,255,.08);
-      color: var(--text);
-      border: 1px solid rgba(255,255,255,.14);
-      margin-top:10px;
-    }
-    .mini{margin-top:10px;font-size:12px;color:var(--warn);line-height:1.35}
-    .err{margin-top:10px;font-size:12px;color:var(--bad);line-height:1.35;display:none}
-  </style>
+  <link rel="stylesheet" href="/webapp/style.css?v=5"/>
 </head>
 <body>
-  <div class="top">
-    <div class="ttl">📺 Anúncio</div>
-    <div class="pill" id="pill">Tempo necessário: —</div>
-  </div>
-
-  <div class="wrap">
-    <div class="card">
-      <div class="h">Abrir anúncio</div>
-      <div class="p">
-        Clique em <b>Abrir anúncio</b> (abre no navegador).  
-        Depois volte para o Telegram — o <b>GAME</b> vai liberar o prêmio automaticamente.
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo"></div>
+        <div>
+          <div class="t1">Assistir anúncio</div>
+          <div class="t2">Abre no navegador • Volte após o tempo</div>
+        </div>
       </div>
+      <div id="statusBar" class="status" data-type="warn">Pronto</div>
+    </header>
 
-      <button class="btn" id="openBtn">🔓 Abrir anúncio</button>
-      <button class="btn gray" id="backBtn">↩ Voltar ao jogo</button>
-
-      <div class="mini" id="note"></div>
-      <div class="err" id="err"></div>
-    </div>
+    <main class="content">
+      <section class="panel active">
+        <div class="card">
+          <div class="title">Tempo mínimo</div>
+          <div class="muted">Você precisa ficar fora por:</div>
+          <div class="big" id="need">—</div>
+          <button class="btn" id="openBtn">🔓 Abrir anúncio</button>
+          <div class="muted" style="margin-top:10px">
+            Depois volte para o Telegram. O game contabiliza automaticamente.
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
 
   <script>
@@ -89,76 +40,48 @@
     const nonce = params.get("nonce") || "";
     const min = Math.max(10, Number(params.get("min") || 20));
 
-    const pill = document.getElementById("pill");
-    const note = document.getElementById("note");
-    const err = document.getElementById("err");
-    const openBtn = document.getElementById("openBtn");
-    const backBtn = document.getElementById("backBtn");
+    document.getElementById("need").textContent = `${min}s`;
 
-    pill.textContent = `Tempo necessário: ${min}s`;
-    note.textContent = `⏱ Você precisa ficar fora pelo menos ${min}s e voltar ao Telegram.`;
-
-    function showErr(msg){
-      err.style.display="block";
-      err.textContent=msg;
-    }
-
-    // Links (aleatório)
-    const links = [
+    const LINKS = [
       "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce"
     ];
-    function pickLink(){
-      return links[Math.floor(Math.random()*links.length)];
-    }
+    const pick = ()=>LINKS[Math.floor(Math.random()*LINKS.length)];
 
     function openExternal(url){
       try{
         if (window.Telegram?.WebApp?.openLink){
-          Telegram.WebApp.openLink(url, { try_instant_view: false });
+          Telegram.WebApp.openLink(url, { try_instant_view:false });
           return;
         }
       } catch {}
-      window.open(url, "_blank");
+      window.open(url,"_blank");
     }
 
-    openBtn.onclick = async () => {
-      try{
-        openBtn.disabled = true;
-        openBtn.textContent = "Preparando…";
+    async function postOpened(){
+      const r = await fetch("/api/ad/opened", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ tg_id, nonce })
+      }).then(x=>x.json()).catch(()=>({ok:false,error:"network"}));
+      return r;
+    }
 
-        // ✅ marca no backend que abriu
-        const openedRes = await fetch("/api/ad/opened", {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({ tg_id, nonce })
-        }).then(r=>r.json()).catch(()=>({ok:false,error:"network"}));
-
-        if (!openedRes.ok) {
-          openBtn.disabled = false;
-          openBtn.textContent = "🔓 Abrir anúncio";
-          showErr("Erro ao iniciar anúncio: " + (openedRes.error || "erro"));
-          return;
-        }
-
-        // ✅ salva pendência pro GAME resolver ao voltar
-        localStorage.setItem("ad_pending", JSON.stringify({
-          tg_id, nonce, min,
-          openedAt: Date.now()
-        }));
-
-        openBtn.textContent = "✅ Aberto — volte ao Telegram";
-        const url = pickLink();
-        openExternal(url);
-
-      } catch(e){
-        openBtn.disabled = false;
-        openBtn.textContent = "🔓 Abrir anúncio";
-        showErr("Falha: " + String(e?.message || e));
+    document.getElementById("openBtn").onclick = async ()=>{
+      document.getElementById("statusBar").textContent = "Iniciando…";
+      const opened = await postOpened();
+      if (!opened.ok){
+        document.getElementById("statusBar").textContent = "Falhou";
+        alert("Erro: "+(opened.error||"erro"));
+        return;
       }
-    };
 
-    backBtn.onclick = () => {
-      location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
+      localStorage.setItem("ad_pending", JSON.stringify({
+        tg_id, nonce, min,
+        openedAt: Date.now()
+      }));
+
+      document.getElementById("statusBar").textContent = "Aberto ✅";
+      openExternal(pick());
     };
   </script>
 </body>
