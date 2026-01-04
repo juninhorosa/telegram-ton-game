@@ -21,7 +21,6 @@
       color: var(--text);
       display:flex; flex-direction:column;
     }
-
     .top{
       padding:14px; border-bottom:1px solid rgba(255,255,255,.06);
       background: rgba(0,0,0,.25); backdrop-filter: blur(14px);
@@ -32,26 +31,16 @@
       padding:8px 12px; border-radius:999px; border:1px solid var(--stroke);
       background: rgba(0,0,0,.25); color: var(--muted); font-size:12px; white-space:nowrap;
     }
-
-    .adWrap{flex:1; display:flex; align-items:center; justify-content:center; padding:14px;}
-    .adBox{
-      width:100%; height:100%;
+    .wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:14px;}
+    .card{
+      width:min(520px, 100%);
       border:1px solid rgba(255,255,255,.12);
-      border-radius:18px;
       background: rgba(0,0,0,.22);
-      display:flex; align-items:center; justify-content:center;
-      text-align:center; padding:14px;
-      overflow:auto;
-      position:relative;
-    }
-
-    .center{
-      max-width:520px;
-      width:100%;
+      border-radius:18px;
+      padding:16px;
     }
     .h{font-weight:900;margin:0 0 8px}
     .p{margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.35}
-
     .btn{
       width:100%;
       border:0;
@@ -66,121 +55,79 @@
       background: rgba(255,255,255,.08);
       color: var(--text);
       border: 1px solid rgba(255,255,255,.14);
-    }
-    .mini{
       margin-top:10px;
-      font-size:12px;
-      color: var(--warn);
-      line-height:1.35;
     }
-    .err{
-      margin-top:10px;
-      font-size:12px;
-      color: var(--bad);
-      line-height:1.35;
-    }
-
-    .bottom{
-      padding:14px; border-top:1px solid rgba(255,255,255,.06);
-      background: rgba(0,0,0,.25); backdrop-filter: blur(14px);
-      font-size:12px; color: var(--muted); line-height:1.35;
-    }
-
-    /* area onde scripts in-page podem renderizar */
-    #inpageSlot{
-      width:100%;
-      min-height: 280px;
-      border:1px dashed rgba(255,255,255,.14);
-      border-radius:16px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:12px;
-      margin-top:12px;
-    }
+    .mini{margin-top:10px;font-size:12px;color:var(--warn);line-height:1.35}
+    .err{margin-top:10px;font-size:12px;color:var(--bad);line-height:1.35;display:none}
   </style>
 </head>
 <body>
   <div class="top">
     <div class="ttl">📺 Anúncio</div>
-    <div class="timer" id="timer">Preparando…</div>
+    <div class="timer" id="timer">Aguardando…</div>
   </div>
 
-  <div class="adWrap">
-    <div class="adBox" id="adBox">
-      <div class="center" id="ui">
-        <div class="h" id="title">Carregando…</div>
-        <div class="p" id="desc">Aguarde.</div>
-
-        <!-- slot para anúncio que aparece dentro da tela -->
-        <div id="inpageSlot" style="display:none">
-          <div style="opacity:.75">Carregando anúncio in-page…</div>
-        </div>
-
-        <!-- botão para direct link (precisa clique no Telegram) -->
-        <button class="btn" id="openDirectBtn" style="display:none">🔓 Abrir anúncio</button>
-
-        <button class="btn gray" id="backBtn" style="margin-top:10px; display:none">↩ Voltar</button>
-
-        <div class="mini" id="note" style="display:none"></div>
-        <div class="err" id="err" style="display:none"></div>
+  <div class="wrap">
+    <div class="card">
+      <div class="h">Abrir anúncio</div>
+      <div class="p">
+        No Telegram, este tipo de anúncio abre em uma aba externa.  
+        <b>O prêmio só libera quando você abrir o anúncio e voltar.</b>
       </div>
-    </div>
-  </div>
 
-  <div class="bottom">
-    ✅ In-page (Banner/Social Bar) aparece dentro do Telegram. ⚠️ Direct Link normalmente abre fora e precisa clique.
+      <button class="btn" id="openBtn">🔓 Abrir anúncio</button>
+      <button class="btn gray" id="backBtn">↩ Voltar ao jogo</button>
+
+      <div class="mini" id="note">
+        Dica: após abrir, volte para o Telegram. Quando voltar, vamos contar o tempo mínimo e liberar automaticamente.
+      </div>
+      <div class="err" id="err"></div>
+    </div>
   </div>
 
   <script>
     const params = new URLSearchParams(location.search);
     const tg_id = params.get("tg_id") || "";
     const nonce = params.get("nonce") || "";
-    const minWatch = Math.max(8, Number(params.get("min") || 15));
+    const min = Math.max(8, Number(params.get("min") || 15));
 
     const timerEl = document.getElementById("timer");
-    const titleEl = document.getElementById("title");
-    const descEl = document.getElementById("desc");
-    const noteEl = document.getElementById("note");
     const errEl = document.getElementById("err");
-    const inpageSlot = document.getElementById("inpageSlot");
-    const openDirectBtn = document.getElementById("openDirectBtn");
+    const openBtn = document.getElementById("openBtn");
     const backBtn = document.getElementById("backBtn");
 
-    function showErr(msg){
-      errEl.style.display = "block";
-      errEl.textContent = msg;
-    }
-    function showNote(msg){
-      noteEl.style.display = "block";
-      noteEl.textContent = msg;
-    }
-
-    // ✅ ROTATOR (adicione mais depois se quiser)
-    const variants = [
-      // 1) IN-PAGE PLACEHOLDER: aqui você vai colar o script "banner/social bar" quando tiver
-      { type: "inpage", name: "In-page", weight: 70 },
-
-      // 2) DIRECT LINK effectivegatecpm (o que você mandou)
-      { type: "direct", name: "Direct Link", weight: 30, url: "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce" }
+    // Rotação aleatória (se quiser, adicione mais links aqui)
+    const links = [
+      "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce"
     ];
 
-    function pickVariant(){
-      const sum = variants.reduce((a,v)=>a+v.weight,0);
-      let r = Math.random() * sum;
-      for (const v of variants){
-        r -= v.weight;
-        if (r <= 0) return v;
-      }
-      return variants[0];
+    function pickLink(){
+      return links[Math.floor(Math.random()*links.length)];
+    }
+    function showErr(msg){
+      errEl.style.display="block";
+      errEl.textContent=msg;
     }
 
-    let started = false; // só libera reward quando "começou" de verdade
-    let left = minWatch;
-    let tick = null;
+    let openedAt = 0;     // quando clicou abrir
+    let armed = false;    // se já abriu e estamos esperando voltar
+    let ticking = false;
 
-    async function claimAndReturn(){
-      timerEl.textContent = "Finalizando…";
+    openBtn.onclick = () => {
+      const url = pickLink();
+      openedAt = Date.now();
+      armed = true;
+      timerEl.textContent = "Abra e volte…";
+      openBtn.disabled = true;
+      openBtn.textContent = "✅ Aberto — volte ao Telegram";
+      window.open(url, "_blank");
+    };
+
+    backBtn.onclick = () => {
+      location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
+    };
+
+    async function claim(){
       const r = await fetch("/api/ad/claim", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
@@ -190,82 +137,42 @@
       if (!r.ok) {
         showErr("Não liberou: " + (r.error || "erro"));
         timerEl.textContent = "Falhou";
+        openBtn.disabled = false;
+        openBtn.textContent = "🔓 Abrir anúncio";
+        armed = false;
         return;
       }
+
       timerEl.textContent = "Prêmio liberado ✅";
       setTimeout(() => {
         location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
       }, 700);
     }
 
-    function startTimer(){
-      if (tick) clearInterval(tick);
-      left = minWatch;
-      started = true;
+    // ✅ Quando o usuário VOLTAR para esta aba (Telegram), iniciamos contagem e liberamos
+    function onBackToApp(){
+      if (!armed || ticking) return;
+      ticking = true;
+
+      let left = min;
       timerEl.textContent = `Aguarde ${left}s…`;
-      tick = setInterval(async () => {
+
+      const t = setInterval(() => {
         left--;
         if (left <= 0) {
-          clearInterval(tick);
-          await claimAndReturn();
+          clearInterval(t);
+          claim();
           return;
         }
         timerEl.textContent = `Aguarde ${left}s…`;
       }, 1000);
     }
 
-    backBtn.onclick = () => {
-      location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
-    };
-
-    // ========== INIT ==========
-    const chosen = pickVariant();
-
-    // Sempre mostrar botão voltar
-    backBtn.style.display = "block";
-
-    if (chosen.type === "direct") {
-      // ✅ Direct link: precisa clique para abrir no Telegram
-      titleEl.textContent = "Anúncio (Direct Link)";
-      descEl.textContent = "Clique em “Abrir anúncio”. Depois volte aqui — o timer começa após o clique.";
-      showNote("No Telegram, Direct Link quase sempre abre fora e exige clique (normal).");
-
-      openDirectBtn.style.display = "block";
-      openDirectBtn.onclick = () => {
-        // abre fora
-        window.open(chosen.url, "_blank");
-        // começa timer depois do clique (anti-burla)
-        openDirectBtn.disabled = true;
-        openDirectBtn.textContent = "✅ Aberto — volte e aguarde";
-        startTimer();
-      };
-
-      timerEl.textContent = "Aguardando clique…";
-    } else {
-      // ✅ In-page: renderiza dentro do slot
-      titleEl.textContent = "Anúncio (na tela do Telegram)";
-      descEl.textContent = "Aguarde o anúncio carregar aqui dentro. O timer começa automaticamente.";
-      inpageSlot.style.display = "flex";
-
-      // ✅ COLE AQUI O SCRIPT IN-PAGE DO ADSTERRA QUANDO CRIAR (Banner/Social Bar/Native)
-      // Exemplo:
-      // const s1 = document.createElement("script");
-      // s1.textContent = "atOptions = {...}";
-      // const s2 = document.createElement("script");
-      // s2.src = "//www.highperformanceformat.com/XXXX/invoke.js";
-      // inpageSlot.appendChild(s1);
-      // inpageSlot.appendChild(s2);
-
-      // Por enquanto, você ainda está usando o script direct do effectivegatecpm.
-      // Então, sem um script in-page real, não existe “algo” pra renderizar aqui.
-      showNote("Para aparecer dentro, crie no Adsterra um Banner/Social Bar e cole o script in-page aqui.");
-
-      // Mesmo assim, o timer pode rodar (mas recomendo só rodar quando tiver script in-page real)
-      startTimer();
-    }
+    // Detecta "voltar" (focus/visibilitychange)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") onBackToApp();
+    });
+    window.addEventListener("focus", onBackToApp);
   </script>
-
-  <!-- ✅ Seu script antigo (effectivegatecpm JS) — mantive, mas ele NÃO renderiza in-page (abre fora) -->
-  <script src="https://pl28396278.effectivegatecpm.com/be/ac/35/beac35627ef514e4a6e87ae06623afb1.js"></script>
 </body>
 </html>
