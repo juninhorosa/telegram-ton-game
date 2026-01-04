@@ -41,20 +41,6 @@
     }
     .h{font-weight:900;margin:0 0 8px}
     .p{margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.35}
-    .req{
-      margin: 10px 0 14px;
-      padding: 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.14);
-      background: rgba(255,255,255,.06);
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:12px;
-      font-size:13px;
-      color: var(--text);
-    }
-    .req b{font-size:14px}
     .btn{
       width:100%;
       border:0;
@@ -83,30 +69,16 @@
 
   <div class="wrap">
     <div class="card">
-      <div class="h" id="title">Assistir anúncio</div>
-      <div class="p" id="desc">
-        Clique em <b>Abrir anúncio</b>. Ele abre no navegador externo.
-        <br>
-        Para receber o prêmio, você precisa ficar fora pelo tempo mínimo e voltar ao Telegram.
-      </div>
-
-      <div class="req">
-        <div>
-          <div style="opacity:.85">⏱ Tempo mínimo fora</div>
-          <b id="need">—</b>
-        </div>
-        <div style="text-align:right">
-          <div style="opacity:.85">✅ Status</div>
-          <b id="status">Pronto</b>
-        </div>
+      <div class="h">Abrir anúncio</div>
+      <div class="p">
+        Clique em <b>Abrir anúncio</b> (abre no navegador).  
+        Depois volte para o Telegram — o <b>GAME</b> vai liberar o prêmio automaticamente.
       </div>
 
       <button class="btn" id="openBtn">🔓 Abrir anúncio</button>
       <button class="btn gray" id="backBtn">↩ Voltar ao jogo</button>
 
-      <div class="mini" id="note">
-        Dica: quando voltar, se ainda faltar tempo, a tela vai mostrar exatamente quantos segundos faltam.
-      </div>
+      <div class="mini" id="note"></div>
       <div class="err" id="err"></div>
     </div>
   </div>
@@ -115,21 +87,20 @@
     const params = new URLSearchParams(location.search);
     const tg_id = params.get("tg_id") || "";
     const nonce = params.get("nonce") || "";
-    const min = Math.max(10, Number(params.get("min") || 20)); // tempo mínimo
+    const min = Math.max(10, Number(params.get("min") || 20));
 
     const pill = document.getElementById("pill");
-    const need = document.getElementById("need");
-    const statusEl = document.getElementById("status");
-    const errEl = document.getElementById("err");
+    const note = document.getElementById("note");
+    const err = document.getElementById("err");
     const openBtn = document.getElementById("openBtn");
     const backBtn = document.getElementById("backBtn");
 
     pill.textContent = `Tempo necessário: ${min}s`;
-    need.textContent = `${min}s`;
+    note.textContent = `⏱ Você precisa ficar fora pelo menos ${min}s e voltar ao Telegram.`;
 
     function showErr(msg){
-      errEl.style.display="block";
-      errEl.textContent=msg;
+      err.style.display="block";
+      err.textContent=msg;
     }
 
     // Links (aleatório)
@@ -139,10 +110,6 @@
     function pickLink(){
       return links[Math.floor(Math.random()*links.length)];
     }
-
-    let openedAt = 0;
-    let waitingReturn = false;
-    let uiTick = null;
 
     function openExternal(url){
       try{
@@ -154,88 +121,45 @@
       window.open(url, "_blank");
     }
 
-    function startUiCountdown(){
-      if (uiTick) clearInterval(uiTick);
-      uiTick = setInterval(() => {
-        if (!waitingReturn) return;
-        const elapsed = (Date.now() - openedAt) / 1000;
-        const left = Math.ceil(min - elapsed);
-        if (left > 0) {
-          statusEl.textContent = `Faltam ${left}s`;
-          pill.textContent = `Faltam ${left}s`;
-        } else {
-          statusEl.textContent = `Pode voltar ✅`;
-          pill.textContent = `Pode voltar ✅`;
+    openBtn.onclick = async () => {
+      try{
+        openBtn.disabled = true;
+        openBtn.textContent = "Preparando…";
+
+        // ✅ marca no backend que abriu
+        const openedRes = await fetch("/api/ad/opened", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ tg_id, nonce })
+        }).then(r=>r.json()).catch(()=>({ok:false,error:"network"}));
+
+        if (!openedRes.ok) {
+          openBtn.disabled = false;
+          openBtn.textContent = "🔓 Abrir anúncio";
+          showErr("Erro ao iniciar anúncio: " + (openedRes.error || "erro"));
+          return;
         }
-      }, 500);
-    }
 
-    openBtn.onclick = () => {
-      const url = pickLink();
-      openedAt = Date.now();
-      waitingReturn = true;
+        // ✅ salva pendência pro GAME resolver ao voltar
+        localStorage.setItem("ad_pending", JSON.stringify({
+          tg_id, nonce, min,
+          openedAt: Date.now()
+        }));
 
-      openBtn.disabled = true;
-      openBtn.textContent = "✅ Aberto — volte ao Telegram";
-      statusEl.textContent = "Assistindo…";
-      pill.textContent = `Faltam ${min}s`;
+        openBtn.textContent = "✅ Aberto — volte ao Telegram";
+        const url = pickLink();
+        openExternal(url);
 
-      startUiCountdown();
-      openExternal(url);
+      } catch(e){
+        openBtn.disabled = false;
+        openBtn.textContent = "🔓 Abrir anúncio";
+        showErr("Falha: " + String(e?.message || e));
+      }
     };
 
     backBtn.onclick = () => {
       location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
     };
-
-    async function claim(){
-      statusEl.textContent = "Finalizando…";
-      pill.textContent = "Finalizando…";
-
-      const r = await fetch("/api/ad/claim", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ tg_id, nonce })
-      }).then(x => x.json()).catch(() => ({ ok:false, error:"network" }));
-
-      if (!r.ok) {
-        showErr("Não liberou: " + (r.error || "erro"));
-        statusEl.textContent = "Falhou";
-        pill.textContent = "Falhou";
-        openBtn.disabled = false;
-        openBtn.textContent = "🔓 Abrir anúncio";
-        waitingReturn = false;
-        return;
-      }
-
-      statusEl.textContent = "Prêmio liberado ✅";
-      pill.textContent = "Prêmio liberado ✅";
-      setTimeout(() => {
-        location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
-      }, 700);
-    }
-
-    function onReturnToTelegram(){
-      if (!waitingReturn) return;
-
-      const elapsed = (Date.now() - openedAt) / 1000;
-      const left = Math.ceil(min - elapsed);
-
-      if (left > 0) {
-        statusEl.textContent = `Faltam ${left}s`;
-        pill.textContent = `Faltam ${left}s`;
-        return;
-      }
-
-      waitingReturn = false;
-      claim();
-    }
-
-    // Detecta volta pro Telegram
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") onReturnToTelegram();
-    });
-    window.addEventListener("focus", onReturnToTelegram);
   </script>
 </body>
 </html>

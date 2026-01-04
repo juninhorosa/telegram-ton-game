@@ -24,7 +24,7 @@ const TON_RECEIVER_ADDRESS = (process.env.TON_RECEIVER_ADDRESS || '').trim();
 // Ads settings
 const AD_ESTIMATED_VALUE_USD = Number(process.env.AD_ESTIMATED_VALUE_USD || '0.01');
 const AD_COOLDOWN_SECONDS = Number(process.env.AD_COOLDOWN_SECONDS || '60');
-const AD_MIN_WATCH_SECONDS = Number(process.env.AD_MIN_WATCH_SECONDS || '15'); // ✅ tempo mínimo p/ liberar reward
+const AD_MIN_WATCH_SECONDS = Number(process.env.AD_MIN_WATCH_SECONDS || '20'); // ✅ recomendo 20+
 
 if (!BOT_TOKEN) console.error('❌ BOT_TOKEN vazio');
 if (!BASE_URL) console.error('❌ BASE_URL vazio');
@@ -68,6 +68,14 @@ function dbAll(sql, params = []) {
       resolve(rows);
     });
   });
+}
+
+async function ensureColumn(table, col, typeSql) {
+  const cols = await dbAll(`PRAGMA table_info(${table})`);
+  const exists = cols.some(c => c.name === col);
+  if (!exists) {
+    await dbRun(`ALTER TABLE ${table} ADD COLUMN ${col} ${typeSql}`);
+  }
 }
 
 async function migrate() {
@@ -149,7 +157,7 @@ async function migrate() {
   `);
   await dbRun(`INSERT OR IGNORE INTO pool_state (id) VALUES (1)`);
 
-  // ✅ Sessões de anúncio (nonce)
+  // ✅ ad_sessions
   await dbRun(`
     CREATE TABLE IF NOT EXISTS ad_sessions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,6 +168,10 @@ async function migrate() {
       claimed INTEGER DEFAULT 0
     )
   `);
+
+  // ✅ adiciona colunas caso já exista tabela antiga
+  await ensureColumn('ad_sessions', 'opened', 'INTEGER DEFAULT 0');
+  await ensureColumn('ad_sessions', 'opened_at', 'TEXT DEFAULT NULL');
 
   // seed itens
   const c = await dbGet(`SELECT COUNT(*) AS c FROM items`);
@@ -211,7 +223,6 @@ bot.onText(/\/start/, async (msg) => {
   const tgId = String(msg.from.id);
   await grantTrialIfNew(tgId);
 
-  // ✅ não depende de query, mas ainda passamos por compatibilidade
   const webAppUrl = `${BASE_URL}/webapp/index.html?tg_id=${encodeURIComponent(tgId)}`;
 
   if (!isAbsoluteHttpUrl(webAppUrl)) {
@@ -223,11 +234,9 @@ bot.onText(/\/start/, async (msg) => {
     tgId,
     `🎮 TON Game
 
-✅ Novo usuário ganha Trial (3 dias)
-📺 Anúncios com reward por tempo + token (anti-burla)
-🛒 Packs compráveis ilimitado
-
-Clique para abrir:`,
+✅ Trial (3 dias)
+📺 Anúncio externo + reward ao voltar ao Telegram
+🛒 Packs compráveis ilimitado`,
     { reply_markup: { inline_keyboard: [[{ text: '▶️ Abrir Jogo', web_app: { url: webAppUrl } }]] } }
   );
 });
@@ -264,7 +273,6 @@ app.get('/api/me', async (req, res) => {
       [tg_id]
     );
 
-    // ads state
     const st = await dbGet(`SELECT * FROM user_ad_state WHERE tg_id=?`, [tg_id]);
     const todayKey = new Date().toISOString().slice(0, 10);
     const watchedToday = (st && st.day_key === todayKey) ? Number(st.watched_today || 0) : 0;
@@ -303,7 +311,7 @@ app.get('/api/pool', async (req, res) => {
   }
 });
 
-// ================= ADS: START (gera nonce) =================
+// ================= ADS: START =================
 app.post('/api/ad/start', async (req, res) => {
   try {
     const { tg_id } = req.body || {};
@@ -312,7 +320,6 @@ app.post('/api/ad/start', async (req, res) => {
 
     await dbRun(`INSERT OR IGNORE INTO users (tg_id) VALUES (?)`, [uid]);
 
-    // cooldown / limite diário (já valida aqui)
     const todayKey = new Date().toISOString().slice(0, 10);
     const st = await dbGet(`SELECT * FROM user_ad_state WHERE tg_id=?`, [uid]);
 
@@ -340,7 +347,7 @@ app.post('/api/ad/start', async (req, res) => {
     }
 
     const nonce = crypto.randomBytes(16).toString('hex');
-    await dbRun(`INSERT INTO ad_sessions (tg_id, nonce) VALUES (?, ?)`, [uid, nonce]);
+    await dbRun(`INSERT INTO ad_sessions (tg_id, nonce, opened, opened_at) VALUES (?, ?, 0, NULL)`, [uid, nonce]);
 
     res.json({
       ok: true,
@@ -355,29 +362,61 @@ app.post('/api/ad/start', async (req, res) => {
   }
 });
 
-// ================= ADS: CLAIM (libera reward) =================
-app.post('/api/ad/claim', async (req, res) => {
+// ✅ ADS: OPENED (marca que o usuário realmente abriu o anúncio)
+app.post('/api/ad/opened', async (req, res) => {
   try {
     const { tg_id, nonce } = req.body || {};
     const uid = String(tg_id || '');
     const n = String(nonce || '');
-
     if (!uid || !n) return res.status(400).json({ ok: false, error: 'missing_fields' });
 
-    // valida nonce
     const sess = await dbGet(`SELECT * FROM ad_sessions WHERE nonce=? LIMIT 1`, [n]);
     if (!sess) return res.json({ ok: false, error: 'invalid_nonce' });
     if (String(sess.tg_id) !== uid) return res.json({ ok: false, error: 'nonce_not_owner' });
     if (Number(sess.claimed || 0) === 1) return res.json({ ok: false, error: 'already_claimed' });
 
-    // valida tempo mínimo
-    const createdMs = Date.parse(sess.created_at);
-    const elapsed = (Date.now() - createdMs) / 1000;
-    if (elapsed < AD_MIN_WATCH_SECONDS) {
-      return res.json({ ok: false, error: 'too_fast', need_seconds: AD_MIN_WATCH_SECONDS, elapsed_seconds: Math.floor(elapsed) });
+    // marca aberto somente uma vez
+    if (Number(sess.opened || 0) === 0) {
+      await dbRun(`UPDATE ad_sessions SET opened=1, opened_at=datetime('now') WHERE nonce=?`, [n]);
     }
 
-    // valida limite diário/cooldown de novo (segurança)
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: 'server_error', details: String(e.message || e) });
+  }
+});
+
+// ================= ADS: CLAIM =================
+app.post('/api/ad/claim', async (req, res) => {
+  try {
+    const { tg_id, nonce } = req.body || {};
+    const uid = String(tg_id || '');
+    const n = String(nonce || '');
+    if (!uid || !n) return res.status(400).json({ ok: false, error: 'missing_fields' });
+
+    const sess = await dbGet(`SELECT * FROM ad_sessions WHERE nonce=? LIMIT 1`, [n]);
+    if (!sess) return res.json({ ok: false, error: 'invalid_nonce' });
+    if (String(sess.tg_id) !== uid) return res.json({ ok: false, error: 'nonce_not_owner' });
+    if (Number(sess.claimed || 0) === 1) return res.json({ ok: false, error: 'already_claimed' });
+
+    // ✅ só libera se realmente abriu
+    if (Number(sess.opened || 0) !== 1 || !sess.opened_at) {
+      return res.json({ ok: false, error: 'not_opened' });
+    }
+
+    // ✅ valida tempo mínimo desde opened_at
+    const openedMs = Date.parse(sess.opened_at);
+    const elapsed = (Date.now() - openedMs) / 1000;
+    if (elapsed < AD_MIN_WATCH_SECONDS) {
+      return res.json({
+        ok: false,
+        error: 'too_fast',
+        need_seconds: AD_MIN_WATCH_SECONDS,
+        elapsed_seconds: Math.floor(elapsed)
+      });
+    }
+
+    // limite diário/cooldown
     const todayKey = new Date().toISOString().slice(0, 10);
     const st = await dbGet(`SELECT * FROM user_ad_state WHERE tg_id=?`, [uid]);
     const watchedToday = (st && st.day_key === todayKey) ? Number(st.watched_today || 0) : 0;
@@ -392,7 +431,6 @@ app.post('/api/ad/claim', async (req, res) => {
     const lim = Number(limRow?.lim || 10);
     if (watchedToday >= lim) return res.json({ ok: false, error: 'daily_limit', limit: lim });
 
-    // boost %
     const boostRow = await dbGet(
       `SELECT COALESCE(MAX(i.ad_boost_pct), 0) AS b
        FROM inventory inv
@@ -409,7 +447,6 @@ app.post('/api/ad/claim', async (req, res) => {
     const userBase = estUsd * basePointsPerUsd * 0.10;
     const userSharePoints = Math.max(1, Math.floor(userBase * (1 + boostPct / 100)));
 
-    // grava
     await dbRun(`UPDATE users SET points = points + ? WHERE tg_id=?`, [userSharePoints, uid]);
 
     await dbRun(

@@ -1,306 +1,295 @@
+// webapp/app.js
+// UI + API do jogo + anúncio externo com recompensa ao voltar pro Telegram
+
+const API = ""; // mesmo domínio (Render). Mantém vazio.
+
+let tgId = "";
+let state = {
+  user: { tg_id: "", points: 0 },
+  inventory: [],
+  pool: { pool_points_total: 0, pool_points_distributed: 0, updated_at: null },
+  ads: {
+    watched_today: 0,
+    daily_limit: 10,
+    cooldown_seconds: 60,
+    min_watch_seconds: 20,
+    last_watch_at: null
+  },
+  items: []
+};
+
+// ----------------- Helpers -----------------
 const $ = (id) => document.getElementById(id);
 
-const statusDot = $("statusDot");
-const statusText = $("statusText");
-
-const pointsValue = $("pointsValue");
-const userIdMini = $("userIdMini");
-const invCount = $("invCount");
-const walletStatus = $("walletStatus");
-
-const btnConnect = $("btnConnect");
-const btnRefresh = $("btnRefresh");
-const btnOpenHelp = $("btnOpenHelp");
-
-const shopArea = $("shopArea");
-const profileArea = $("profileArea");
-const inventoryArea = $("inventoryArea");
-
-const poolTotal = $("poolTotal");
-const poolDistributed = $("poolDistributed");
-const adsUsed = $("adsUsed");
-const adsLimit = $("adsLimit");
-const cooldownText = $("cooldownText");
-const adsBar = $("adsBar");
-const btnWatchAd = $("btnWatchAd");
-
-const toast = $("toast");
-const toastTitle = $("toastTitle");
-const toastMsg = $("toastMsg");
-const toastClose = $("toastClose");
-
-function setStatus(kind, text) {
-  statusText.textContent = text;
-  statusDot.className = "dot " + (kind || "warn");
-}
-function showToast(title, msg) {
-  toastTitle.textContent = title;
-  toastMsg.textContent = msg;
-  toast.classList.add("show");
-  clearTimeout(showToast._t);
-  showToast._t = setTimeout(() => toast.classList.remove("show"), 3500);
-}
-toastClose.onclick = () => toast.classList.remove("show");
-
-// Telegram
-try {
-  if (window.Telegram?.WebApp) {
-    Telegram.WebApp.ready();
-    Telegram.WebApp.expand();
-  }
-} catch {}
-
-function getTgIdSafe() {
-  // 1) query
-  const p = new URLSearchParams(location.search);
-  const fromQuery = p.get("tg_id");
-  if (fromQuery) return fromQuery;
-
-  // 2) Telegram initDataUnsafe
-  try {
-    const u = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    if (u?.id) return String(u.id);
-  } catch {}
-
-  // 3) localStorage
-  const ls = localStorage.getItem("tg_id");
-  if (ls) return ls;
-
-  return "";
-}
-
-const tgId = getTgIdSafe();
-if (tgId) localStorage.setItem("tg_id", tgId);
-
-const API = location.origin;
-
-// TON Connect
-const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
-  manifestUrl: "https://raw.githubusercontent.com/ton-community/tutorials/main/tonconnect-manifest.json"
-});
-
-function shortAddr(a) {
-  if (!a) return "";
-  return a.slice(0, 4) + "…" + a.slice(-4);
-}
-async function refreshWalletUI() {
-  const w = tonConnectUI.wallet;
-  if (w?.account?.address) {
-    walletStatus.textContent = shortAddr(w.account.address);
-    btnConnect.textContent = "✅ Carteira conectada";
-    btnConnect.className = "btn ghost";
-  } else {
-    walletStatus.textContent = "Não conectada";
-    btnConnect.textContent = "🔗 Conectar carteira";
-    btnConnect.className = "btn primary";
-  }
-}
-
-btnConnect.onclick = async () => {
-  try {
-    await tonConnectUI.connectWallet();
-    await refreshWalletUI();
-    showToast("Carteira", "Conectada com sucesso.");
-  } catch {
-    showToast("Carteira", "Conexão cancelada.");
-  }
-};
-
-btnRefresh.onclick = async () => {
-  await loadAll();
-  showToast("Atualizado", "Dados sincronizados.");
-};
-
-btnOpenHelp.onclick = () => {
-  showToast(
-    "Como funciona",
-    "Você ganha Trial no início. Itens geram pontos. Anúncio só libera reward após tempo mínimo + token (anti-burla)."
-  );
-};
-
-function apiGet(url) {
-  return fetch(url).then(r => r.json());
-}
-function apiPost(url, body) {
-  return fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
-  }).then(r => r.json());
-}
-
-function formatNum(n) {
+function fmtInt(n) {
   const x = Number(n || 0);
-  if (!Number.isFinite(x)) return "0";
   return x.toLocaleString("pt-PT");
 }
-function setAdsBar(used, limit) {
-  const pct = limit > 0 ? Math.max(0, Math.min(100, Math.round((used / limit) * 100))) : 0;
-  adsBar.style.width = pct + "%";
+
+function setStatus(type, text) {
+  const el = $("statusBar");
+  if (!el) return;
+  el.textContent = text || "";
+  el.dataset.type = type || "ok";
 }
 
-let adsState = { watched_today: 0, daily_limit: 10, cooldown_seconds: 60, min_watch_seconds: 15, last_watch_at: null };
-let cooldownTimer = null;
-
-function startCooldownTicker() {
-  if (cooldownTimer) clearInterval(cooldownTimer);
-  cooldownTimer = setInterval(() => {
-    const last = adsState.last_watch_at ? Date.parse(adsState.last_watch_at) : 0;
-    const cd = Number(adsState.cooldown_seconds || 60) * 1000;
-    if (!last) return (cooldownText.textContent = "Pronto");
-    const left = cd - (Date.now() - last);
-    if (left <= 0) return (cooldownText.textContent = "Pronto");
-    cooldownText.textContent = Math.ceil(left / 1000) + "s";
-  }, 500);
+function showToast(title, msg) {
+  const t = $("toast");
+  const tt = $("toastTitle");
+  const tm = $("toastMsg");
+  if (!t || !tt || !tm) return alert(`${title}\n${msg}`);
+  tt.textContent = title || "";
+  tm.textContent = msg || "";
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove("show"), 3200);
 }
 
-async function loadPool() {
-  const j = await apiGet(`${API}/api/pool`);
-  if (!j.ok) {
-    poolTotal.textContent = "—";
-    poolDistributed.textContent = "—";
-    return;
-  }
-  poolTotal.textContent = `${formatNum(j.pool.pool_points_total)} pts`;
-  poolDistributed.textContent = `${formatNum(j.pool.pool_points_distributed)} pts`;
+async function apiGet(path) {
+  const r = await fetch(`${API}${path}`, { method: "GET" });
+  return r.json();
+}
+async function apiPost(path, body) {
+  const r = await fetch(`${API}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {})
+  });
+  return r.json();
 }
 
-async function loadMe() {
-  if (!tgId) {
-    profileArea.innerHTML = `<b>Abra pelo bot</b><br><span style="opacity:.8">Use /start e abra pelo botão.</span>`;
-    pointsValue.textContent = "—";
-    userIdMini.textContent = "ID: —";
-    invCount.textContent = "—";
-    inventoryArea.innerHTML = "";
-    return;
-  }
+// ----------------- Render UI -----------------
+function renderHeader() {
+  $("pointsValue").textContent = fmtInt(state.user.points);
+  $("tgidValue").textContent = state.user.tg_id;
 
-  const j = await apiGet(`${API}/api/me?tg_id=${encodeURIComponent(tgId)}`);
-  if (!j.ok) {
-    profileArea.innerHTML = `<span style="color:#ff6b6b"><b>Falha ao carregar perfil.</b></span>`;
-    return;
-  }
-
-  pointsValue.textContent = formatNum(j.user.points);
-  userIdMini.textContent = `ID: ${j.user.tg_id}`;
-
-  const inv = j.inventory || [];
-  invCount.textContent = formatNum(inv.reduce((a, it) => a + Number(it.quantity || 0), 0));
-
-  adsState = j.ads || adsState;
-  adsUsed.textContent = String(adsState.watched_today ?? 0);
-  adsLimit.textContent = String(adsState.daily_limit ?? 10);
-  setAdsBar(Number(adsState.watched_today || 0), Number(adsState.daily_limit || 10));
-  startCooldownTicker();
-
-  profileArea.innerHTML = `<b>Seu progresso</b><br><span style="opacity:.8">Itens ativos aumentam pontos/dia e boost em anúncios.</span>`;
-
-  if (!inv.length) {
-    inventoryArea.innerHTML = `<span style="opacity:.8">Você ainda não tem itens. Compre na loja para começar.</span>`;
-  } else {
-    inventoryArea.innerHTML = inv.map(it => {
-      const exp = it.expires_at ? ` • ⏳ ${it.expires_at}` : "";
-      const boost = Number(it.ad_boost_pct || 0) > 0 ? ` • 📺 Boost +${it.ad_boost_pct}%` : "";
-      return `
-        <div class="invrow">
-          <div>
-            <div class="nm">${String(it.name)}</div>
-            <div class="ds">⭐ +${it.points_per_day} pts/dia${boost}${exp}</div>
-          </div>
-          <div class="qty">x${it.quantity}</div>
-        </div>
-      `;
-    }).join("");
-  }
+  $("adsTodayValue").textContent = `${state.ads.watched_today}/${state.ads.daily_limit}`;
+  $("poolTotalValue").textContent = fmtInt(state.pool.pool_points_total);
+  $("poolDistValue").textContent = fmtInt(state.pool.pool_points_distributed);
 }
 
-async function loadItems() {
-  const j = await apiGet(`${API}/api/items`);
-  if (!j.ok) {
-    shopArea.innerHTML = `<span style="color:#ff6b6b"><b>Erro ao carregar a loja.</b></span>`;
+function renderInventory() {
+  const wrap = $("inventoryList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+
+  if (!state.inventory || state.inventory.length === 0) {
+    wrap.innerHTML = `<div class="empty">Sem itens ainda.</div>`;
     return;
   }
 
-  const items = (j.items || []).filter(it => Number(it.price_ton || 0) > 0);
-  shopArea.innerHTML = `
-    <div class="shop">
-      ${items.map(item => `
-        <div class="item">
-          <div class="name">${item.name}</div>
-          <div class="meta">
-            <span class="badge">💎 ${item.price_ton} TON</span>
-            <span class="badge">⭐ +${item.points_per_day}/dia</span>
-            <span class="badge">📺 Boost +${item.ad_boost_pct}%</span>
-          </div>
-          <div style="margin-top:10px">
-            <button class="btn primary full" data-buy="${item.id}">Comprar agora</button>
-          </div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+  for (const it of state.inventory) {
+    const exp = it.expires_at ? new Date(it.expires_at.replace(" ", "T") + "Z") : null;
+    const expText = exp ? `Expira: ${exp.toLocaleString("pt-PT")}` : "Sem expiração";
 
-  document.querySelectorAll("[data-buy]").forEach(btn => {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    card.innerHTML = `
+      <div class="row">
+        <div class="title">${it.name}</div>
+        <div class="pill">x${fmtInt(it.quantity)}</div>
+      </div>
+      <div class="sub">
+        <div>+${fmtInt(it.points_per_day)} pts/dia</div>
+        <div>Boost Ads: +${fmtInt(it.ad_boost_pct)}%</div>
+      </div>
+      <div class="muted">${expText}</div>
+    `;
+    wrap.appendChild(card);
+  }
+}
+
+function renderShop() {
+  const wrap = $("shopList");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+
+  const items = state.items || [];
+  if (items.length === 0) {
+    wrap.innerHTML = `<div class="empty">Sem packs disponíveis.</div>`;
+    return;
+  }
+
+  for (const it of items) {
+    const isFree = Number(it.price_ton) <= 0;
+    const card = document.createElement("div");
+    card.className = "card shop";
+
+    card.innerHTML = `
+      <div class="row">
+        <div class="title">${it.name}</div>
+        <div class="pill">${isFree ? "GRÁTIS" : `${it.price_ton} TON`}</div>
+      </div>
+      <div class="sub">
+        <div>+${fmtInt(it.points_per_day)} pts/dia</div>
+        <div>Boost Ads: +${fmtInt(it.ad_boost_pct)}%</div>
+      </div>
+      <button class="btn ${isFree ? "btnDisabled" : ""}" ${isFree ? "disabled" : ""} data-buy="${it.id}">
+        ${isFree ? "Já incluso (Trial)" : "Comprar com TON"}
+      </button>
+      <div class="muted">Limite Ads/dia (máx pelo seu inventário): ${fmtInt(it.max_ads_per_day)}</div>
+    `;
+
+    wrap.appendChild(card);
+  }
+
+  // handlers
+  wrap.querySelectorAll("[data-buy]").forEach(btn => {
     btn.addEventListener("click", async () => {
-      const itemId = Number(btn.getAttribute("data-buy"));
-      await buyFlow(itemId);
+      const id = Number(btn.getAttribute("data-buy"));
+      await buyItem(id);
     });
   });
 }
 
-async function buyFlow(itemId) {
-  if (!tgId) return showToast("Abra pelo bot", "Use /start e abra pelo botão.");
-  const w = tonConnectUI.wallet;
-  if (!w?.account?.address) return showToast("Carteira", "Conecte sua carteira para comprar.");
+// ----------------- Load all -----------------
+async function loadAll() {
+  setStatus("warn", "Carregando…");
 
-  showToast("Compra", "Preparando pedido...");
-  const j = await apiPost(`${API}/api/purchase/create`, { tg_id: tgId, item_id: itemId });
-  if (!j.ok) return showToast("Erro", j.error || "Falha ao criar compra");
+  const [me, items, pool] = await Promise.all([
+    apiGet(`/api/me?tg_id=${encodeURIComponent(tgId)}`),
+    apiGet(`/api/items`),
+    apiGet(`/api/pool`)
+  ]);
 
-  const amountNano = String(Math.floor(Number(j.amount_ton) * 1e9));
+  if (!me.ok) {
+    setStatus("bad", "Erro ao carregar usuário");
+    showToast("Erro", me.error || "Falha");
+    return;
+  }
 
+  state.user = me.user;
+  state.inventory = me.inventory || [];
+  state.ads = me.ads || state.ads;
+
+  state.items = items.ok ? (items.items || []) : [];
+  state.pool = pool.ok ? (pool.pool || state.pool) : state.pool;
+
+  renderHeader();
+  renderInventory();
+  renderShop();
+
+  setStatus("ok", "Pronto ✅");
+}
+
+// ----------------- Ad pending claim (fix principal) -----------------
+async function checkPendingAd() {
   try {
-    setStatus("warn", "Aguardando assinatura na carteira…");
-    await tonConnectUI.sendTransaction({
-      validUntil: Math.floor(Date.now() / 1000) + 600,
-      messages: [{ address: j.receiver, amount: amountNano }]
-    });
-    setStatus("good", "Transação enviada ✅");
-    showToast("Pagamento", "Transação enviada.");
-  } catch {
-    setStatus("bad", "Transação cancelada");
-    showToast("Cancelado", "Você cancelou na carteira.");
-  } finally {
-    await refreshWalletUI();
+    const raw = localStorage.getItem("ad_pending");
+    if (!raw) return;
+
+    const p = JSON.parse(raw);
+    if (!p?.nonce || !p?.tg_id) return;
+
+    // Só tenta se for o mesmo usuário
+    if (String(p.tg_id) !== String(tgId)) return;
+
+    const min = Number(p.min || state.ads.min_watch_seconds || 20);
+    const openedAt = Number(p.openedAt || 0);
+    if (!openedAt) return;
+
+    const elapsed = (Date.now() - openedAt) / 1000;
+    const left = Math.ceil(min - elapsed);
+
+    if (left > 0) {
+      setStatus("warn", `Aguarde ${left}s para liberar o prêmio do anúncio…`);
+      clearTimeout(checkPendingAd._t);
+      checkPendingAd._t = setTimeout(() => checkPendingAd(), Math.min(2000, left * 1000));
+      return;
+    }
+
+    setStatus("warn", "Confirmando prêmio do anúncio…");
+    const r = await apiPost(`/api/ad/claim`, { tg_id: tgId, nonce: p.nonce });
+
+    if (!r.ok) {
+      // too_fast: aguarda e tenta de novo
+      if (r.error === "too_fast") {
+        setStatus("warn", "Aguarde mais alguns segundos…");
+        clearTimeout(checkPendingAd._t);
+        checkPendingAd._t = setTimeout(() => checkPendingAd(), 2000);
+        return;
+      }
+
+      // not_opened ou erro => limpa
+      localStorage.removeItem("ad_pending");
+      setStatus("bad", "Não foi possível liberar o prêmio");
+      showToast("Anúncio", "Falhou: " + (r.error || "erro"));
+      return;
+    }
+
+    localStorage.removeItem("ad_pending");
+    showToast("✅ Prêmio liberado", `+${fmtInt(r.user_share_points)} pts`);
+    await loadAll();
+  } catch (e) {
+    console.log("checkPendingAd error:", e);
   }
 }
 
-// ✅ Anúncio: start -> abre ad.html com nonce
-btnWatchAd.onclick = async () => {
-  if (!tgId) return showToast("Abra pelo bot", "Use /start e abra pelo botão.");
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") checkPendingAd();
+});
+window.addEventListener("focus", () => checkPendingAd());
 
+// ----------------- Watch Ad flow -----------------
+async function startAd() {
   setStatus("warn", "Preparando anúncio…");
-  const s = await apiPost(`${API}/api/ad/start`, { tg_id: tgId });
+
+  const s = await apiPost(`/api/ad/start`, { tg_id: tgId });
 
   if (!s.ok) {
     if (s.error === "cooldown") return showToast("Aguarde", `Cooldown: ${s.wait_seconds}s`);
-    if (s.error === "daily_limit") return showToast("Limite", `Você já usou ${s.limit} anúncios hoje.`);
+    if (s.error === "daily_limit") return showToast("Limite diário", `Limite: ${s.limit}`);
     return showToast("Erro", s.error || "Falha ao iniciar anúncio");
   }
 
-  // abre a tela de anúncio (que vai abrir o navegador externo)
-  location.href = `/webapp/ad.html?tg_id=${encodeURIComponent(tgId)}&nonce=${encodeURIComponent(s.nonce)}&min=${encodeURIComponent(s.min_watch_seconds)}`;
-};
-
-async function loadAll() {
-  setStatus("warn", "Carregando…");
-  await refreshWalletUI();
-  await loadPool();
-  await loadMe();
-  await loadItems();
-  setStatus("good", "Online");
+  // abre a tela de anúncio (ela salva ad_pending no localStorage e o GAME faz claim quando voltar)
+  const url = `/webapp/ad.html?tg_id=${encodeURIComponent(tgId)}&nonce=${encodeURIComponent(s.nonce)}&min=${encodeURIComponent(s.min_watch_seconds)}`;
+  location.href = url;
 }
 
-(async function init(){
-  await loadAll();
-})();
+// ----------------- Buy flow (TON) -----------------
+async function buyItem(itemId) {
+  try {
+    setStatus("warn", "Gerando pagamento TON…");
+    const r = await apiPost(`/api/purchase/create`, { tg_id: tgId, item_id: itemId });
+
+    if (!r.ok) {
+      setStatus("bad", "Falha no pagamento");
+      return showToast("Pagamento", r.error || "Erro ao criar compra");
+    }
+
+    // Aqui você integra seu TonConnect / TON deep link.
+    // Por enquanto, só mostra dados para o usuário.
+    setStatus("ok", "Pagamento criado");
+    showToast("TON", `Enviar ${r.amount_ton} TON para:\n${r.receiver}\n\nDepois confirme no sistema.`);
+  } catch (e) {
+    setStatus("bad", "Erro");
+    showToast("Erro", String(e?.message || e));
+  }
+}
+
+// ----------------- Init -----------------
+function init() {
+  // pega tg_id da URL
+  const params = new URLSearchParams(location.search);
+  tgId = params.get("tg_id") || "";
+
+  if (!tgId) {
+    setStatus("bad", "Abra pelo bot do Telegram");
+    showToast("Erro", "tg_id ausente. Use /start e abra pelo botão do bot.");
+    return;
+  }
+
+  // botão watch ad
+  const btnWatch = $("btnWatchAd");
+  if (btnWatch) btnWatch.addEventListener("click", startAd);
+
+  // fechar toast
+  const toastClose = $("toastClose");
+  if (toastClose) toastClose.addEventListener("click", () => $("toast").classList.remove("show"));
+
+  loadAll().then(() => checkPendingAd());
+}
+
+init();
