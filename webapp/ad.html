@@ -69,17 +69,18 @@
 
   <div class="wrap">
     <div class="card">
-      <div class="h">Abrir anúncio</div>
-      <div class="p">
-        No Telegram, este tipo de anúncio abre em uma aba externa.  
-        <b>O prêmio só libera quando você abrir o anúncio e voltar.</b>
+      <div class="h" id="title">Abrir anúncio</div>
+      <div class="p" id="desc">
+        Clique em <b>Abrir anúncio</b>. O anúncio vai abrir no navegador do seu celular/PC.
+        <br><br>
+        <b>Volte para o Telegram</b> após alguns segundos para receber o prêmio automaticamente.
       </div>
 
       <button class="btn" id="openBtn">🔓 Abrir anúncio</button>
       <button class="btn gray" id="backBtn">↩ Voltar ao jogo</button>
 
       <div class="mini" id="note">
-        Dica: após abrir, volte para o Telegram. Quando voltar, vamos contar o tempo mínimo e liberar automaticamente.
+        ✅ Prêmio só libera quando você <b>voltar</b> ao Telegram e tiver passado o tempo mínimo.
       </div>
       <div class="err" id="err"></div>
     </div>
@@ -89,38 +90,53 @@
     const params = new URLSearchParams(location.search);
     const tg_id = params.get("tg_id") || "";
     const nonce = params.get("nonce") || "";
-    const min = Math.max(8, Number(params.get("min") || 15));
+    const min = Math.max(10, Number(params.get("min") || 20)); // você pode subir pra 25/30
 
     const timerEl = document.getElementById("timer");
     const errEl = document.getElementById("err");
     const openBtn = document.getElementById("openBtn");
     const backBtn = document.getElementById("backBtn");
 
-    // Rotação aleatória (se quiser, adicione mais links aqui)
-    const links = [
-      "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce"
-    ];
-
-    function pickLink(){
-      return links[Math.floor(Math.random()*links.length)];
-    }
     function showErr(msg){
       errEl.style.display="block";
       errEl.textContent=msg;
     }
 
-    let openedAt = 0;     // quando clicou abrir
-    let armed = false;    // se já abriu e estamos esperando voltar
-    let ticking = false;
+    // ✅ ROTATOR (aleatório)
+    const links = [
+      "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce",
+      // mantém o seu script antigo como outro destino (opcional):
+      // "https://pl28396278.effectivegatecpm.com/be/ac/35/beac35627ef514e4a6e87ae06623afb1.js"  <-- isso é JS, não URL final. Evite.
+    ];
+    function pickLink(){
+      return links[Math.floor(Math.random()*links.length)];
+    }
+
+    let openedAt = 0;
+    let waitingReturn = false;
+
+    function openExternal(url){
+      try{
+        // ✅ Se estiver dentro do Telegram WebApp, abre no navegador externo corretamente
+        if (window.Telegram?.WebApp?.openLink){
+          Telegram.WebApp.openLink(url, { try_instant_view: false });
+          return;
+        }
+      } catch {}
+      // fallback
+      window.open(url, "_blank");
+    }
 
     openBtn.onclick = () => {
       const url = pickLink();
       openedAt = Date.now();
-      armed = true;
-      timerEl.textContent = "Abra e volte…";
+      waitingReturn = true;
+
       openBtn.disabled = true;
       openBtn.textContent = "✅ Aberto — volte ao Telegram";
-      window.open(url, "_blank");
+      timerEl.textContent = "Abra e volte…";
+
+      openExternal(url);
     };
 
     backBtn.onclick = () => {
@@ -128,6 +144,7 @@
     };
 
     async function claim(){
+      timerEl.textContent = "Finalizando…";
       const r = await fetch("/api/ad/claim", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
@@ -139,7 +156,7 @@
         timerEl.textContent = "Falhou";
         openBtn.disabled = false;
         openBtn.textContent = "🔓 Abrir anúncio";
-        armed = false;
+        waitingReturn = false;
         return;
       }
 
@@ -149,30 +166,27 @@
       }, 700);
     }
 
-    // ✅ Quando o usuário VOLTAR para esta aba (Telegram), iniciamos contagem e liberamos
-    function onBackToApp(){
-      if (!armed || ticking) return;
-      ticking = true;
+    function onReturnToTelegram(){
+      if (!waitingReturn) return;
 
-      let left = min;
-      timerEl.textContent = `Aguarde ${left}s…`;
+      const elapsed = (Date.now() - openedAt) / 1000;
+      if (elapsed < min) {
+        timerEl.textContent = `Volte depois… faltam ${Math.ceil(min - elapsed)}s`;
+        return;
+      }
 
-      const t = setInterval(() => {
-        left--;
-        if (left <= 0) {
-          clearInterval(t);
-          claim();
-          return;
-        }
-        timerEl.textContent = `Aguarde ${left}s…`;
-      }, 1000);
+      // ✅ passou o tempo mínimo fora -> claim automático
+      waitingReturn = false;
+      claim();
     }
 
-    // Detecta "voltar" (focus/visibilitychange)
+    // Detecta quando o usuário volta para o Telegram
     document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState === "visible") onBackToApp();
+      if (document.visibilityState === "visible") onReturnToTelegram();
     });
-    window.addEventListener("focus", onBackToApp);
+    window.addEventListener("focus", onReturnToTelegram);
+
+    timerEl.textContent = "Pronto para abrir";
   </script>
 </body>
 </html>

@@ -288,9 +288,8 @@ btnWatchAd.onclick = async () => {
     return showToast("Erro", s.error || "Falha ao iniciar anúncio");
   }
 
-  // abre full screen page
-  const url = `/webapp/ad.html?tg_id=${encodeURIComponent(tgId)}&nonce=${encodeURIComponent(s.nonce)}&min=${encodeURIComponent(s.min_watch_seconds)}`;
-  location.href = url;
+  // abre a tela de anúncio (que vai abrir o navegador externo)
+  location.href = `/webapp/ad.html?tg_id=${encodeURIComponent(tgId)}&nonce=${encodeURIComponent(s.nonce)}&min=${encodeURIComponent(s.min_watch_seconds)}`;
 };
 
 async function loadAll() {
