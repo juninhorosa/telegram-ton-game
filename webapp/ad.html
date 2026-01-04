@@ -27,13 +27,13 @@
       display:flex; align-items:center; justify-content:space-between; gap:10px;
     }
     .ttl{font-weight:900;font-size:14px}
-    .timer{
+    .pill{
       padding:8px 12px; border-radius:999px; border:1px solid var(--stroke);
       background: rgba(0,0,0,.25); color: var(--muted); font-size:12px; white-space:nowrap;
     }
     .wrap{flex:1; display:flex; align-items:center; justify-content:center; padding:14px;}
     .card{
-      width:min(520px, 100%);
+      width:min(540px, 100%);
       border:1px solid rgba(255,255,255,.12);
       background: rgba(0,0,0,.22);
       border-radius:18px;
@@ -41,6 +41,20 @@
     }
     .h{font-weight:900;margin:0 0 8px}
     .p{margin:0 0 12px;color:var(--muted);font-size:13px;line-height:1.35}
+    .req{
+      margin: 10px 0 14px;
+      padding: 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      font-size:13px;
+      color: var(--text);
+    }
+    .req b{font-size:14px}
     .btn{
       width:100%;
       border:0;
@@ -64,23 +78,34 @@
 <body>
   <div class="top">
     <div class="ttl">📺 Anúncio</div>
-    <div class="timer" id="timer">Aguardando…</div>
+    <div class="pill" id="pill">Tempo necessário: —</div>
   </div>
 
   <div class="wrap">
     <div class="card">
-      <div class="h" id="title">Abrir anúncio</div>
+      <div class="h" id="title">Assistir anúncio</div>
       <div class="p" id="desc">
-        Clique em <b>Abrir anúncio</b>. O anúncio vai abrir no navegador do seu celular/PC.
-        <br><br>
-        <b>Volte para o Telegram</b> após alguns segundos para receber o prêmio automaticamente.
+        Clique em <b>Abrir anúncio</b>. Ele abre no navegador externo.
+        <br>
+        Para receber o prêmio, você precisa ficar fora pelo tempo mínimo e voltar ao Telegram.
+      </div>
+
+      <div class="req">
+        <div>
+          <div style="opacity:.85">⏱ Tempo mínimo fora</div>
+          <b id="need">—</b>
+        </div>
+        <div style="text-align:right">
+          <div style="opacity:.85">✅ Status</div>
+          <b id="status">Pronto</b>
+        </div>
       </div>
 
       <button class="btn" id="openBtn">🔓 Abrir anúncio</button>
       <button class="btn gray" id="backBtn">↩ Voltar ao jogo</button>
 
       <div class="mini" id="note">
-        ✅ Prêmio só libera quando você <b>voltar</b> ao Telegram e tiver passado o tempo mínimo.
+        Dica: quando voltar, se ainda faltar tempo, a tela vai mostrar exatamente quantos segundos faltam.
       </div>
       <div class="err" id="err"></div>
     </div>
@@ -90,23 +115,26 @@
     const params = new URLSearchParams(location.search);
     const tg_id = params.get("tg_id") || "";
     const nonce = params.get("nonce") || "";
-    const min = Math.max(10, Number(params.get("min") || 20)); // você pode subir pra 25/30
+    const min = Math.max(10, Number(params.get("min") || 20)); // tempo mínimo
 
-    const timerEl = document.getElementById("timer");
+    const pill = document.getElementById("pill");
+    const need = document.getElementById("need");
+    const statusEl = document.getElementById("status");
     const errEl = document.getElementById("err");
     const openBtn = document.getElementById("openBtn");
     const backBtn = document.getElementById("backBtn");
+
+    pill.textContent = `Tempo necessário: ${min}s`;
+    need.textContent = `${min}s`;
 
     function showErr(msg){
       errEl.style.display="block";
       errEl.textContent=msg;
     }
 
-    // ✅ ROTATOR (aleatório)
+    // Links (aleatório)
     const links = [
-      "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce",
-      // mantém o seu script antigo como outro destino (opcional):
-      // "https://pl28396278.effectivegatecpm.com/be/ac/35/beac35627ef514e4a6e87ae06623afb1.js"  <-- isso é JS, não URL final. Evite.
+      "https://www.effectivegatecpm.com/uxsrj9n2h?key=48b82410e36175baaf64291fbcb2f0ce"
     ];
     function pickLink(){
       return links[Math.floor(Math.random()*links.length)];
@@ -114,17 +142,32 @@
 
     let openedAt = 0;
     let waitingReturn = false;
+    let uiTick = null;
 
     function openExternal(url){
       try{
-        // ✅ Se estiver dentro do Telegram WebApp, abre no navegador externo corretamente
         if (window.Telegram?.WebApp?.openLink){
           Telegram.WebApp.openLink(url, { try_instant_view: false });
           return;
         }
       } catch {}
-      // fallback
       window.open(url, "_blank");
+    }
+
+    function startUiCountdown(){
+      if (uiTick) clearInterval(uiTick);
+      uiTick = setInterval(() => {
+        if (!waitingReturn) return;
+        const elapsed = (Date.now() - openedAt) / 1000;
+        const left = Math.ceil(min - elapsed);
+        if (left > 0) {
+          statusEl.textContent = `Faltam ${left}s`;
+          pill.textContent = `Faltam ${left}s`;
+        } else {
+          statusEl.textContent = `Pode voltar ✅`;
+          pill.textContent = `Pode voltar ✅`;
+        }
+      }, 500);
     }
 
     openBtn.onclick = () => {
@@ -134,8 +177,10 @@
 
       openBtn.disabled = true;
       openBtn.textContent = "✅ Aberto — volte ao Telegram";
-      timerEl.textContent = "Abra e volte…";
+      statusEl.textContent = "Assistindo…";
+      pill.textContent = `Faltam ${min}s`;
 
+      startUiCountdown();
       openExternal(url);
     };
 
@@ -144,7 +189,9 @@
     };
 
     async function claim(){
-      timerEl.textContent = "Finalizando…";
+      statusEl.textContent = "Finalizando…";
+      pill.textContent = "Finalizando…";
+
       const r = await fetch("/api/ad/claim", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
@@ -153,14 +200,16 @@
 
       if (!r.ok) {
         showErr("Não liberou: " + (r.error || "erro"));
-        timerEl.textContent = "Falhou";
+        statusEl.textContent = "Falhou";
+        pill.textContent = "Falhou";
         openBtn.disabled = false;
         openBtn.textContent = "🔓 Abrir anúncio";
         waitingReturn = false;
         return;
       }
 
-      timerEl.textContent = "Prêmio liberado ✅";
+      statusEl.textContent = "Prêmio liberado ✅";
+      pill.textContent = "Prêmio liberado ✅";
       setTimeout(() => {
         location.href = `/webapp/index.html?tg_id=${encodeURIComponent(tg_id)}`;
       }, 700);
@@ -170,23 +219,23 @@
       if (!waitingReturn) return;
 
       const elapsed = (Date.now() - openedAt) / 1000;
-      if (elapsed < min) {
-        timerEl.textContent = `Volte depois… faltam ${Math.ceil(min - elapsed)}s`;
+      const left = Math.ceil(min - elapsed);
+
+      if (left > 0) {
+        statusEl.textContent = `Faltam ${left}s`;
+        pill.textContent = `Faltam ${left}s`;
         return;
       }
 
-      // ✅ passou o tempo mínimo fora -> claim automático
       waitingReturn = false;
       claim();
     }
 
-    // Detecta quando o usuário volta para o Telegram
+    // Detecta volta pro Telegram
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") onReturnToTelegram();
     });
     window.addEventListener("focus", onReturnToTelegram);
-
-    timerEl.textContent = "Pronto para abrir";
   </script>
 </body>
 </html>
