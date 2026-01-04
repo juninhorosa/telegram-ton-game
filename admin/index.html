@@ -7,29 +7,45 @@
   <style>
     body{font-family:system-ui;margin:0;background:#0b1020;color:#eaf0ff}
     header{padding:16px;border-bottom:1px solid rgba(255,255,255,.1);display:flex;justify-content:space-between;align-items:center}
-    .wrap{max-width:1100px;margin:0 auto;padding:16px}
+    .wrap{max-width:1200px;margin:0 auto;padding:16px}
     .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px;margin-bottom:14px}
     input,button{padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:rgba(0,0,0,.2);color:#fff}
     button{cursor:pointer}
     table{width:100%;border-collapse:collapse}
     th,td{padding:10px;border-bottom:1px solid rgba(255,255,255,.1);text-align:left;font-size:13px}
-    .row{display:flex;gap:10px;flex-wrap:wrap}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
     .pill{padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);display:inline-block}
+    .muted{opacity:.8;font-size:12px}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    @media (max-width:900px){ .grid{grid-template-columns:repeat(2,1fr)} }
   </style>
 </head>
 <body>
 <header>
-  <div><b>TON Game Admin</b> (acesso só navegador)</div>
-  <button onclick="loadAll()">Atualizar</button>
+  <div><b>TON Game Admin</b> (apenas navegador)</div>
+  <div class="row">
+    <button onclick="loadAll()">Atualizar</button>
+  </div>
 </header>
 
 <div class="wrap">
+  <div class="card">
+    <h3>Visão Geral</h3>
+    <div class="grid">
+      <div class="card"><div class="muted">Total usuários</div><div id="ovUsers" style="font-size:22px;font-weight:900">—</div></div>
+      <div class="card"><div class="muted">Total pontos</div><div id="ovPoints" style="font-size:22px;font-weight:900">—</div></div>
+      <div class="card"><div class="muted">Pool hoje (pts)</div><div id="ovPool" style="font-size:22px;font-weight:900">—</div></div>
+      <div class="card"><div class="muted">Compras pendentes</div><div id="ovPurch" style="font-size:22px;font-weight:900">—</div></div>
+    </div>
+    <div class="muted">Dia UTC: <span id="ovDay">—</span></div>
+  </div>
+
   <div class="card">
     <h3>Configurações</h3>
     <label><input id="refEnabled" type="checkbox"/> Referrals ativos</label><br/>
     <label><input id="promoEnabled" type="checkbox"/> Promo codes ativos</label><br/><br/>
     <button onclick="saveConfig()">Salvar</button>
-    <div id="cfgMsg"></div>
+    <div id="cfgMsg" class="muted"></div>
   </div>
 
   <div class="card">
@@ -40,7 +56,7 @@
       <input id="pUses" type="number" placeholder="Max uses (ex: 10)"/>
       <button onclick="createPromo()">Criar</button>
     </div>
-    <div id="promoMsg"></div>
+    <div id="promoMsg" class="muted"></div>
   </div>
 
   <div class="card">
@@ -49,8 +65,33 @@
   </div>
 
   <div class="card">
-    <h3>Usuários (top 1000)</h3>
+    <h3>Usuários</h3>
+    <div class="row">
+      <input id="qUser" placeholder="Buscar tg_id..." style="min-width:220px"/>
+      <button onclick="loadUsers()">Buscar</button>
+    </div>
+    <div class="muted">Ajustar pontos (admin):</div>
+    <div class="row">
+      <input id="uId" placeholder="tg_id"/>
+      <input id="uDelta" type="number" placeholder="delta (+/-)"/>
+      <button onclick="addPoints()">Aplicar</button>
+    </div>
     <div id="users"></div>
+  </div>
+
+  <div class="card">
+    <h3>Compras (TON)</h3>
+    <div class="muted">Confirme manualmente como “pago” para entregar o item.</div>
+    <div id="purchases"></div>
+  </div>
+
+  <div class="card">
+    <h3>Pool</h3>
+    <div class="row">
+      <input id="dKey" placeholder="YYYY-MM-DD (ex: 2026-01-04)"/>
+      <button onclick="distribute()">Distribuir (manual)</button>
+    </div>
+    <div id="poolMsg" class="muted"></div>
   </div>
 </div>
 
@@ -58,42 +99,21 @@
 async function jget(u){ return fetch(u).then(r=>r.json()); }
 async function jpost(u,b){ return fetch(u,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(r=>r.json()); }
 
-async function loadAll(){
+async function loadOverview(){
+  const o = await jget("/admin/api/overview");
+  if(!o.ok) return;
+  document.getElementById("ovUsers").textContent = o.total_users;
+  document.getElementById("ovPoints").textContent = o.total_points;
+  document.getElementById("ovPool").textContent = o.pool_today?.pool_points ?? "—";
+  document.getElementById("ovPurch").textContent = o.purchases_pending;
+  document.getElementById("ovDay").textContent = o.day_key;
+}
+
+async function loadConfig(){
   const cfg = await jget("/admin/api/config");
   if (cfg.ok){
     document.getElementById("refEnabled").checked = !!cfg.config.referrals_enabled;
     document.getElementById("promoEnabled").checked = !!cfg.config.promo_enabled;
-  }
-
-  const promos = await jget("/admin/api/promos");
-  if (promos.ok){
-    const html = promos.promos.map(p=>`
-      <div class="card">
-        <div><b>${p.code}</b> <span class="pill">${p.points} pts</span> <span class="pill">${p.uses}/${p.max_uses}</span> <span class="pill">${p.active? "ATIVO":"OFF"}</span></div>
-        <button onclick="togglePromo('${p.code}', ${p.active?0:1})">${p.active? "Desativar":"Ativar"}</button>
-      </div>
-    `).join("");
-    document.getElementById("promos").innerHTML = html || "—";
-  }
-
-  const users = await jget("/admin/api/users");
-  if (users.ok){
-    const rows = users.users.map(u=>`
-      <tr>
-        <td>${u.tg_id}</td>
-        <td>${u.points}</td>
-        <td>${u.today_participation}</td>
-        <td>${u.referral_code||"—"}</td>
-        <td>${u.referrer_tg_id||"—"}</td>
-      </tr>
-    `).join("");
-    document.getElementById("users").innerHTML = `
-      <div class="pill">Dia UTC: ${users.day_key}</div>
-      <table>
-        <thead><tr><th>TG_ID</th><th>Pontos</th><th>Participações hoje</th><th>Meu code</th><th>Referrer</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
   }
 }
 
@@ -111,14 +131,95 @@ async function createPromo(){
   const max_uses = Number(document.getElementById("pUses").value||0);
   const r = await jpost("/admin/api/promos/create", { code, points, max_uses });
   document.getElementById("promoMsg").textContent = r.ok ? "✅ Criado" : ("❌ "+(r.error||"erro"));
-  loadAll();
+  loadPromos();
 }
 
 async function togglePromo(code, active){
-  const r = await jpost("/admin/api/promos/toggle", { code, active });
-  loadAll();
+  await jpost("/admin/api/promos/toggle", { code, active });
+  loadPromos();
 }
 
+async function loadPromos(){
+  const promos = await jget("/admin/api/promos");
+  if (!promos.ok) return;
+  const html = promos.promos.map(p=>`
+    <div class="card">
+      <div><b>${p.code}</b> <span class="pill">${p.points} pts</span> <span class="pill">${p.uses}/${p.max_uses}</span> <span class="pill">${p.active? "ATIVO":"OFF"}</span></div>
+      <button onclick="togglePromo('${p.code}', ${p.active?0:1})">${p.active? "Desativar":"Ativar"}</button>
+    </div>
+  `).join("");
+  document.getElementById("promos").innerHTML = html || "—";
+}
+
+async function loadUsers(){
+  const q = document.getElementById("qUser").value.trim();
+  const users = await jget("/admin/api/users" + (q ? ("?q="+encodeURIComponent(q)) : ""));
+  if (!users.ok) return;
+
+  const rows = users.users.map(u=>`
+    <tr>
+      <td>${u.tg_id}</td>
+      <td>${u.points}</td>
+      <td>${u.today_participation}</td>
+      <td>${u.referral_code||"—"}</td>
+      <td>${u.referrer_tg_id||"—"}</td>
+    </tr>
+  `).join("");
+
+  document.getElementById("users").innerHTML = `
+    <div class="pill">Dia UTC: ${users.day_key}</div>
+    <table>
+      <thead><tr><th>TG_ID</th><th>Pontos</th><th>Participações hoje</th><th>Meu code</th><th>Referrer</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+async function addPoints(){
+  const tg_id = document.getElementById("uId").value.trim();
+  const delta = Number(document.getElementById("uDelta").value||0);
+  if(!tg_id || !delta) return alert("Preencha tg_id e delta");
+  await jpost("/admin/api/users/points", { tg_id, delta });
+  loadUsers(); loadOverview();
+}
+
+async function loadPurchases(){
+  const p = await jget("/admin/api/purchases");
+  if(!p.ok) return;
+  const html = p.purchases.map(x=>`
+    <div class="card">
+      <div class="row">
+        <div><b>#${x.id}</b> ${x.item_name} <span class="pill">${x.amount_ton} TON</span></div>
+        <div class="pill">${x.status}</div>
+      </div>
+      <div class="muted">tg_id: ${x.tg_id}</div>
+      <div class="muted">comentário: ${x.comment}</div>
+      ${x.status==="created" ? `<button onclick="markPaid(${x.id})">Marcar como PAGO e entregar</button>` : ""}
+    </div>
+  `).join("");
+  document.getElementById("purchases").innerHTML = html || "—";
+}
+
+async function markPaid(id){
+  await jpost("/admin/api/purchases/markPaid", { id });
+  loadPurchases(); loadUsers(); loadOverview();
+}
+
+async function distribute(){
+  const day_key = document.getElementById("dKey").value.trim();
+  if(!day_key) return alert("Informe a data YYYY-MM-DD");
+  const r = await jpost("/admin/api/pool/distribute", { day_key });
+  document.getElementById("poolMsg").textContent = r.ok ? "✅ Distribuído" : "❌ Erro";
+  loadOverview(); loadUsers();
+}
+
+async function loadAll(){
+  await loadOverview();
+  await loadConfig();
+  await loadPromos();
+  await loadUsers();
+  await loadPurchases();
+}
 loadAll();
 </script>
 </body>

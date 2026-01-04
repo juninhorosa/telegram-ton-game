@@ -4,7 +4,7 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"/>
   <title>TON GAME</title>
-  <link rel="stylesheet" href="/webapp/style.css?v=5"/>
+  <link rel="stylesheet" href="/webapp/style.css?v=8"/>
 </head>
 <body>
   <div class="app">
@@ -13,7 +13,7 @@
         <div class="logo"></div>
         <div>
           <div class="t1">TON Game</div>
-          <div class="t2">Mini App • Dashboard • Loja • Anúncio</div>
+          <div class="t2">Dashboard • Loja • Admin fora do Telegram</div>
         </div>
       </div>
       <div id="statusBar" class="status" data-type="warn">Carregando…</div>
@@ -22,7 +22,6 @@
     <nav class="tabs">
       <button class="tab active" data-tab="dash">Dashboard</button>
       <button class="tab" data-tab="shop">Loja</button>
-      <button class="tab" data-tab="ad">Anúncio</button>
     </nav>
 
     <main class="content">
@@ -34,7 +33,7 @@
             <div class="pill" id="pointsValue">—</div>
           </div>
           <div class="muted">ID: <span id="tgidValue">—</span></div>
-          <div class="muted">Seu referral: <span id="refCodeValue">—</span></div>
+          <div class="muted">Referral: <span id="refCodeValue">—</span></div>
         </div>
 
         <div class="card">
@@ -49,35 +48,38 @@
               <div class="big" id="myPartValue">—</div>
             </div>
           </div>
+          <button id="btnWatchAd" class="btn" style="margin-top:12px">📺 Assistir anúncio (+1 ponto +1 pool)</button>
+          <div class="muted" id="adHint" style="margin-top:10px">Ao voltar para o Telegram, o prêmio é liberado automaticamente.</div>
+        </div>
+
+        <div class="card">
+          <div class="title">Trial Miner</div>
+          <div class="muted">Ative vendo 5 anúncios. Dura 1 dia.</div>
+          <div class="row" style="margin-top:10px">
+            <div class="pill">Progresso: <span id="trialProg">0</span>/5</div>
+            <div class="pill">Status: <span id="trialStatus">—</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="title">Seus mineiros</div>
+          <div class="muted">Produção total/dia: <b id="prodDay">—</b> pontos</div>
+          <div id="inventoryList" class="list" style="margin-top:10px">
+            <div class="muted">Carregando inventário…</div>
+          </div>
         </div>
       </section>
 
       <!-- SHOP -->
       <section class="panel" id="tab-shop">
         <div class="card">
-          <div class="title">Loja</div>
-          <div class="muted">Itens (por enquanto em pontos/farm). Pagamento TON real não incluído aqui.</div>
+          <div class="title">Loja (TON)</div>
+          <div class="muted">Você paga em TON e o item é liberado após confirmação no painel admin.</div>
+          <div class="muted" style="margin-top:6px">Wallet do jogo: <span id="shopWallet">—</span></div>
         </div>
 
         <div id="shopList" class="list">
           <div class="muted">Carregando loja…</div>
-        </div>
-      </section>
-
-      <!-- AD -->
-      <section class="panel" id="tab-ad">
-        <div class="card">
-          <div class="title">Pool & Boost</div>
-          <div class="muted">Assistir anúncio: +1 ponto pra você +1 ponto no pool do dia.</div>
-          <button id="btnWatchAd" class="btn">📺 Assistir anúncio e ganhar +1</button>
-        </div>
-
-        <div class="card">
-          <div class="title">Perfil & Inventário</div>
-          <div class="muted">Seus itens ativos.</div>
-          <div id="inventoryList" class="list">
-            <div class="muted">Carregando inventário…</div>
-          </div>
         </div>
       </section>
     </main>
@@ -91,6 +93,6 @@
     </div>
   </div>
 
-  <script src="/webapp/app.js?v=5"></script>
+  <script src="/webapp/app.js?v=8"></script>
 </body>
 </html>
