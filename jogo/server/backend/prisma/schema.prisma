@@ -1,0 +1,141 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Player {
+  id              String    @id @default(cuid())
+  telegramId      String    @unique
+  username        String
+  tonWallet       String?
+  passwordHash    String?
+
+  veBalance       Float     @default(0)
+  csBalance       Int       @default(0)
+  pendingVE       Float     @default(0)
+  pendingCS       Int       @default(0)
+
+  riskScore       Int       @default(0)
+  isBanned        Boolean   @default(false)
+  banType         String    @default("none")
+
+  referralCode    String    @unique
+  referredById    String?
+  referredBy      Player?   @relation("Referrals", fields: [referredById], references: [id])
+  referrals       Player[]  @relation("Referrals")
+
+  lastCollectAt   DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  guardians       Guardian[]
+  transactions    Transaction[]
+  withdrawals     Withdrawal[]
+  notes           AdminNote[]
+  fraudFlags      FraudFlag[]
+  referralCommissions ReferralCommission[]
+
+  @@index([telegramId])
+  @@index([referralCode])
+}
+
+model Guardian {
+  id            String   @id @default(cuid())
+  playerId      String
+  player        Player   @relation(fields: [playerId], references: [id])
+  name          String
+  rarity        String
+  level         Int      @default(1)
+  farmingPower  Float
+  vePerHour     Float
+  csPerHour     Int
+  isActive      Boolean  @default(true)
+  acquiredAt    DateTime @default(now())
+
+  @@index([playerId])
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id])
+  type        String
+  amount      Float
+  currency    String
+  description String
+  createdAt   DateTime @default(now())
+
+  @@index([playerId])
+  @@index([createdAt])
+}
+
+model Withdrawal {
+  id              String    @id @default(cuid())
+  playerId        String
+  player          Player    @relation(fields: [playerId], references: [id])
+  veAmount        Float
+  tonAmount       Float
+  tonWallet       String
+  status          String    @default("pending")
+  riskScore       Int       @default(0)
+  rejectionReason String?
+  processedById   String?
+  requestedAt     DateTime  @default(now())
+  processedAt     DateTime?
+
+  @@index([playerId])
+  @@index([status])
+}
+
+model AdminNote {
+  id        String   @id @default(cuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  adminName String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model FraudFlag {
+  id          String   @id @default(cuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id])
+  type        String
+  description String
+  detectedAt  DateTime @default(now())
+
+  @@index([playerId])
+}
+
+model ReferralCommission {
+  id            String   @id @default(cuid())
+  referrerId    String
+  referrer      Player   @relation(fields: [referrerId], references: [id])
+  referredId    String
+  level         Int
+  veAmount      Float
+  createdAt     DateTime @default(now())
+
+  @@index([referrerId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String
+  adminName String
+  action    String
+  target    String
+  details   String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model SystemConfig {
+  key   String @id
+  value String
+}

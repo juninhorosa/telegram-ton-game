@@ -1,0 +1,151 @@
+;; CryptoRealm Treasury Contract
+;; Manages game funds: receives TON from purchases, sends TON for withdrawals
+
+#include "imports/stdlib.fc";
+
+;; Storage variables
+const int idx_admin_key = 0;
+const int idx_total_balance = 1;
+const int idx_daily_limit = 2;
+const int idx_daily_withdrawn = 3;
+const int idx_last_reset_day = 4;
+const int idx_paused = 5;
+
+;; Operations
+const int op_transfer = 0x12345678;
+const int op_deposit = 0x87654321;
+const int op_set_admin = 0x11111111;
+const int op_set_daily_limit = 0x22222222;
+const int op_pause = 0x33333333;
+const int op_unpause = 0x44444444;
+
+() save_data(int admin_key, int total_balance, int daily_limit, int daily_withdrawn, int last_reset_day, int paused) impure {
+    set_data(begin_cell()
+        .store_uint(admin_key, 256)
+        .store_coins(total_balance)
+        .store_coins(daily_limit)
+        .store_coins(daily_withdrawn)
+        .store_uint(last_reset_day, 32)
+        .store_uint(paused, 1)
+    .end_cell());
+}
+
+(int, int, int, int, int, int) load_data() {
+    var ds = get_data().begin_parse();
+    return (
+        ds~load_uint(256),      ;; admin_key
+        ds~load_coins(),         ;; total_balance
+        ds~load_coins(),         ;; daily_limit
+        ds~load_coins(),         ;; daily_withdrawn
+        ds~load_uint(32),        ;; last_reset_day
+        ds~load_uint(1)          ;; paused
+    );
+}
+
+() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+    slice cs = in_msg_full.begin_parse();
+    int flags = cs~load_uint(4);
+
+    if (flags & 1) {
+        return (); ;; ignore bounced messages
+    }
+
+    slice sender = cs~load_msg_addr();
+    int sender_key = begin_cell().store_slice(sender).end_cell().hash();
+
+    var (admin_key, total_balance, daily_limit, daily_withdrawn, last_reset_day, paused) = load_data();
+
+    ;; Auto-reset daily counter
+    int today = now() / 86400;
+    if (today > last_reset_day) {
+        daily_withdrawn = 0;
+        last_reset_day = today;
+    }
+
+    if (in_msg_body.slice_empty?()) {
+        ;; Simple TON deposit
+        save_data(admin_key, total_balance + msg_value, daily_limit, daily_withdrawn, last_reset_day, paused);
+        return ();
+    }
+
+    int op = in_msg_body~load_uint(32);
+    int query_id = in_msg_body~load_uint(64);
+
+    if (op == op_transfer) {
+        ;; Withdrawal: transfer TON to player
+        throw_unless(300, sender_key == admin_key); ;; only admin
+        throw_unless(301, paused == 0); ;; not paused
+
+        slice to_addr = in_msg_body~load_msg_addr();
+        int amount = in_msg_body~load_coins();
+        int fee = amount * 5 / 100; ;; 5% fee
+        int net_amount = amount - fee;
+
+        throw_unless(302, net_amount <= total_balance); ;; sufficient balance
+        throw_unless(303, daily_withdrawn + net_amount <= daily_limit); ;; daily limit
+
+        total_balance -= net_amount;
+        daily_withdrawn += net_amount;
+
+        ;; Send TON to player
+        var msg = begin_cell()
+            .store_uint(0x18, 6)
+            .store_slice(to_addr)
+            .store_coins(net_amount)
+            .store_uint(0, 107)
+            .store_uint(0, 1)
+        .end_cell();
+        send_raw_message(msg, 1);
+
+        ;; Burn the fee (send to zero address)
+        var burn = begin_cell()
+            .store_uint(0x18, 6)
+            .store_addr(0, 0x0000000000000000000000000000000000000000000000000000000000000000)
+            .store_coins(fee)
+            .store_uint(0, 107)
+        .end_cell();
+        send_raw_message(burn, 1);
+
+        save_data(admin_key, total_balance, daily_limit, daily_withdrawn, last_reset_day, paused);
+        return ();
+    }
+
+    if (op == op_set_admin) {
+        throw_unless(310, sender_key == admin_key);
+        int new_admin = in_msg_body~load_uint(256);
+        save_data(new_admin, total_balance, daily_limit, daily_withdrawn, last_reset_day, paused);
+        return ();
+    }
+
+    if (op == op_set_daily_limit) {
+        throw_unless(320, sender_key == admin_key);
+        int new_limit = in_msg_body~load_coins();
+        save_data(admin_key, total_balance, new_limit, daily_withdrawn, last_reset_day, paused);
+        return ();
+    }
+
+    if (op == op_pause) {
+        throw_unless(330, sender_key == admin_key);
+        save_data(admin_key, total_balance, daily_limit, daily_withdrawn, last_reset_day, 1);
+        return ();
+    }
+
+    if (op == op_unpause) {
+        throw_unless(340, sender_key == admin_key);
+        save_data(admin_key, total_balance, daily_limit, daily_withdrawn, last_reset_day, 0);
+        return ();
+    }
+
+    throw(0xffff);
+}
+
+;; Getter functions
+(int, int, int, int) get_balance() method_id {
+    var (_, total_balance, daily_limit, daily_withdrawn, _, _) = load_data();
+    return (total_balance, daily_limit, daily_withdrawn, total_balance);
+}
+
+int is_paused() method_id {
+    var (_, _, _, _, _, paused) = load_data();
+    return paused;
+}

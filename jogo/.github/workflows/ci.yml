@@ -1,0 +1,60 @@
+name: CryptoRealm CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: backend/package-lock.json
+      - run: cd backend && npm ci
+      - run: cd backend && npx prisma generate
+      - run: cd backend && npm run build
+
+  build-tma:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: tma/package-lock.json
+      - run: cd tma && npm ci
+      - run: cd tma && npm run build
+
+  build-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: admin/package-lock.json
+      - run: cd admin && npm ci
+      - run: cd admin && npm run build
+
+  deploy:
+    needs: [build-backend, build-tma, build-admin]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and push Docker images
+        run: |
+          docker compose build
+          # Add your registry push commands here
+      - name: Deploy to production
+        run: |
+          # Add your deployment commands here
+          echo "Deploying to production..."

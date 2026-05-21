@@ -1,0 +1,19 @@
+{
+  "name": "cryptorealm-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npx blueprint build",
+    "test": "npx blueprint test",
+    "deploy": "npx blueprint run"
+  },
+  "devDependencies": {
+    "@ton/blueprint": "^0.22.0",
+    "@ton/core": "^0.56.0",
+    "@ton/crypto": "^3.2.0",
+    "@ton/sandbox": "^0.20.0",
+    "@ton/test-utils": "^0.4.0",
+    "@ton/ton": "^14.0.0",
+    "ton-compiler": "^0.1.0"
+  }
+}

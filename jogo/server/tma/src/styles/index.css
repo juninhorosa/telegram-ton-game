@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-card: #1a1a2e;
+  --bg-card-hover: #252540;
+  --accent-purple: #7c3aed;
+  --accent-cyan: #06b6d4;
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px rgba(124, 58, 237, 0.3); }
+  50% { box-shadow: 0 0 40px rgba(124, 58, 237, 0.6); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.glow-pulse { animation: pulse-glow 2s ease-in-out infinite; }
+.float { animation: float 3s ease-in-out infinite; }
+
+/* Guardian rarity borders */
+.rarity-common { border-color: #94a3b8; }
+.rarity-rare { border-color: #3b82f6; }
+.rarity-epic { border-color: #a855f7; }
+.rarity-legendary { border-color: #eab308; }
