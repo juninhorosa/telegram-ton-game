@@ -21,6 +21,10 @@ interface PlayerState {
     withdrawCooldownDays: number;
     freeWithdrawWaitDays: number;
   };
+  publicConfig?: {
+    adLink: string;
+    adMinSeconds: number;
+  };
   withdrawEligibility?: {
     canWithdraw: boolean;
     reason: string | null;
@@ -51,6 +55,7 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   guardianCount: 0,
   referralCount: 0,
   economy: undefined,
+  publicConfig: undefined,
   withdrawEligibility: undefined,
   isAuthReady: false,
   authError: "",

@@ -18,6 +18,11 @@ export default function App() {
 
   useEffect(() => {
     const run = async () => {
+      if (!isTelegramWebApp() && window.location.pathname.startsWith("/web-login")) {
+        setAuth(true);
+        return;
+      }
+
       try {
         if (isTelegramWebApp()) {
           await api.loginFromTelegram();

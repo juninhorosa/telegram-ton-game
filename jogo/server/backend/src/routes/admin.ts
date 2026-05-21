@@ -3,6 +3,13 @@ import type { Prisma } from "@prisma/client";
 import crypto from "node:crypto";
 import { prisma } from "../index";
 
+async function getNumberConfig(client: any, key: string, fallback: number) {
+  const row = await client.systemConfig.findUnique({ where: { key } });
+  if (!row) return fallback;
+  const n = Number(row.value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 async function requireAdminAccess(request: any, reply: any) {
   const adminKey = process.env.ADMIN_API_KEY;
   const provided = request.headers["x-admin-key"];
@@ -382,6 +389,11 @@ export async function adminRoutes(app: FastifyInstance) {
     if (deposit.status === "approved") return deposit;
 
     const updated = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const veToTonRate = await getNumberConfig(tx, "ve_to_ton_rate", 0.005);
+      const level1Percent = await getNumberConfig(tx, "referral_level1_percent", 10);
+      const level2Percent = await getNumberConfig(tx, "referral_level2_percent", 3);
+      const level3Percent = await getNumberConfig(tx, "referral_level3_percent", 1);
+
       const d = await tx.deposit.update({
         where: { id },
         data: { status: "approved", approvedAt: new Date() },
@@ -391,6 +403,55 @@ export async function adminRoutes(app: FastifyInstance) {
         where: { id: deposit.playerId },
         data: { tonDepositedTotal: { increment: deposit.tonAmount } },
       });
+
+      const depositor = await tx.player.findUnique({
+        where: { id: deposit.playerId },
+        select: { id: true, referredById: true },
+      });
+
+      if (depositor?.referredById) {
+        const l1 = depositor.referredById;
+        const l1Player = await tx.player.findUnique({ where: { id: l1 }, select: { id: true, referredById: true } });
+        const l2 = l1Player?.referredById || null;
+        const l2Player = l2 ? await tx.player.findUnique({ where: { id: l2 }, select: { id: true, referredById: true } }) : null;
+        const l3 = l2Player?.referredById || null;
+
+        const veEquivalent = veToTonRate > 0 ? deposit.tonAmount / veToTonRate : 0;
+        const payouts: Array<{ referrerId: string; level: number; percent: number }> = [
+          { referrerId: l1, level: 1, percent: level1Percent },
+          ...(l2 ? [{ referrerId: l2, level: 2, percent: level2Percent }] : []),
+          ...(l3 ? [{ referrerId: l3, level: 3, percent: level3Percent }] : []),
+        ];
+
+        for (const p of payouts) {
+          const veAmount = (veEquivalent * p.percent) / 100;
+          if (!Number.isFinite(veAmount) || veAmount <= 0) continue;
+
+          await tx.player.update({
+            where: { id: p.referrerId },
+            data: { veBalance: { increment: veAmount } },
+          });
+
+          await tx.referralCommission.create({
+            data: {
+              referrerId: p.referrerId,
+              referredId: deposit.playerId,
+              level: p.level,
+              veAmount,
+            },
+          });
+
+          await tx.transaction.create({
+            data: {
+              playerId: p.referrerId,
+              type: "referral_commission",
+              amount: veAmount,
+              currency: "VE",
+              description: `Referral commission (L${p.level}) from deposit ${deposit.txHash}`,
+            },
+          });
+        }
+      }
 
       await tx.transaction.create({
         data: {

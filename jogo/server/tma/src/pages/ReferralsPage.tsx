@@ -52,6 +52,18 @@ export function ReferralsPage() {
         <div className="text-2xl font-bold text-cyan-400">
           {referrals?.totalCommissions?.toFixed(2) || "0.00"} VE
         </div>
+        <div className="text-xs text-gray-500 mt-1">
+          Pago apenas quando o referral faz depósito aprovado.
+        </div>
+      </div>
+
+      {/* Deposits from referrals */}
+      <div className="bg-[#1a1a2e] rounded-xl p-4 border border-amber-500/20">
+        <h3 className="text-sm font-semibold mb-2">Depósitos dos referrals</h3>
+        <div className="text-2xl font-bold text-amber-200">
+          {(referrals?.totals?.donatedTON || 0).toFixed(3)} TON
+        </div>
+        <div className="text-xs text-gray-500 mt-1">Total doado por todos os seus referrals (aprovado).</div>
       </div>
 
       {/* Commission Structure */}
@@ -86,9 +98,21 @@ export function ReferralsPage() {
           {data?.length > 0 ? (
             <div className="space-y-2">
               {data.map((r: any) => (
-                <div key={r.id} className="flex justify-between items-center p-2 bg-[#252540] rounded-lg">
-                  <span className="text-sm">{icon} {r.username}</span>
-                  <span className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</span>
+                <div key={r.id} className="p-3 bg-[#252540] rounded-lg border border-[#2a2a4a]">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm">{icon} {r.username}</span>
+                    <span className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</span>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg p-2">
+                      <div className="text-gray-400">Doou</div>
+                      <div className="font-mono text-amber-200">{Number(r.donatedTON || 0).toFixed(3)} TON</div>
+                    </div>
+                    <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-lg p-2">
+                      <div className="text-gray-400">Comissão</div>
+                      <div className="font-mono text-cyan-300">{Number(r.commissionEarnedVE || 0).toFixed(2)} VE</div>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

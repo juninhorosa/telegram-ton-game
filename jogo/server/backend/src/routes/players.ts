@@ -27,6 +27,12 @@ async function getNumberConfig(key: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+async function getStringConfig(key: string, fallback: string) {
+  const row = await prisma.systemConfig.findUnique({ where: { key } });
+  if (!row) return fallback;
+  return String(row.value ?? fallback);
+}
+
 export async function playerRoutes(app: FastifyInstance) {
   // Get current player profile
   app.get("/me", { preHandler: [app.authenticate] }, async (request) => {
@@ -47,6 +53,8 @@ export async function playerRoutes(app: FastifyInstance) {
     const withdrawFeePercent = await getNumberConfig("withdraw_fee_percent", 5);
     const withdrawCooldownDays = await getNumberConfig("withdraw_cooldown_days", 15);
     const freeWithdrawWaitDays = await getNumberConfig("free_withdraw_wait_days", 15);
+    const adLink = await getStringConfig("ad_link", "");
+    const adMinSeconds = await getNumberConfig("ad_min_seconds", 8);
 
     const now = new Date();
     const lastWithdrawal = await prisma.withdrawal.findFirst({
@@ -102,6 +110,10 @@ export async function playerRoutes(app: FastifyInstance) {
       totals: {
         withdrawnVE: withdrawnAgg._sum.veAmount || 0,
         withdrawnTON: withdrawnAgg._sum.tonAmount || 0,
+      },
+      publicConfig: {
+        adLink,
+        adMinSeconds,
       },
     };
   });

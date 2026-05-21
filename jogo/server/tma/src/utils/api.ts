@@ -116,6 +116,11 @@ export const api = {
     }),
   getWithdrawals: () => request("/withdrawals/me"),
 
+  // Deposits
+  requestDeposit: (tonAmount: number, txHash: string) =>
+    request("/deposits/request", { method: "POST", body: JSON.stringify({ tonAmount, txHash }) }),
+  getDeposits: () => request("/deposits/me"),
+
   // Referrals
   getReferrals: () => request("/referrals"),
   getReferralLink: () => request("/referrals/link"),

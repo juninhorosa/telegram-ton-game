@@ -34,9 +34,13 @@ export function AdminPage() {
       "ad_reward_ve",
       "ad_reward_cooldown_hours",
       "ad_link",
+      "ad_min_seconds",
       "bot_farm_price_ve",
       "bot_farm_roi_days",
       "bot_farm_purchase_cooldown_hours",
+      "referral_level1_percent",
+      "referral_level2_percent",
+      "referral_level3_percent",
     ],
     []
   );
