@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
+import crypto from "node:crypto";
 import { prisma } from "../index";
 
 async function requireAdminAccess(request: any, reply: any) {
@@ -21,6 +22,73 @@ async function requireAdminAccess(request: any, reply: any) {
 }
 
 export async function adminRoutes(app: FastifyInstance) {
+  app.post("/web-login", async (request, reply) => {
+    const { id, code } = request.body as { id: string; code: string };
+    if (!id || !code) {
+      reply.code(400);
+      return { error: "Missing id/code" };
+    }
+
+    const session = await prisma.adminWebSession.findUnique({ where: { id } });
+    if (!session) {
+      reply.code(404);
+      return { error: "Session not found" };
+    }
+    if (session.usedAt) {
+      reply.code(410);
+      return { error: "Session already used" };
+    }
+    if (session.expiresAt.getTime() <= Date.now()) {
+      reply.code(410);
+      return { error: "Session expired" };
+    }
+
+    const secret = process.env.JWT_SECRET || process.env.ADMIN_API_KEY || "secret";
+    const expected = crypto.createHash("sha256").update(`${id}:${code}:${secret}`).digest("hex");
+    if (expected !== session.codeHash) {
+      reply.code(401);
+      return { error: "Invalid code" };
+    }
+
+    const admin = await prisma.player.findUnique({ where: { id: session.adminPlayerId } });
+    if (!admin || !admin.isAdmin) {
+      reply.code(403);
+      return { error: "Forbidden" };
+    }
+
+    await prisma.adminWebSession.update({ where: { id }, data: { usedAt: new Date() } });
+
+    const token = app.jwt.sign({
+      id: admin.id,
+      telegramId: admin.telegramId,
+      username: admin.username,
+    });
+
+    return { token };
+  });
+
+  app.post("/web-session", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
+    const user = request.user as { id: string };
+    const ttlMinutes = Math.max(1, Math.min(60, Number((request.body as any)?.ttlMinutes ?? 10)));
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    const secret = process.env.JWT_SECRET || process.env.ADMIN_API_KEY || "secret";
+
+    const created = await prisma.adminWebSession.create({
+      data: {
+        adminPlayerId: user.id,
+        codeHash: "",
+        expiresAt,
+      },
+    });
+
+    const codeHash = crypto.createHash("sha256").update(`${created.id}:${code}:${secret}`).digest("hex");
+    await prisma.adminWebSession.update({ where: { id: created.id }, data: { codeHash } });
+
+    return { id: created.id, code, expiresAt: created.expiresAt.toISOString() };
+  });
+
   // Dashboard metrics
   app.get("/dashboard", { preHandler: [app.authenticate, requireAdminAccess] }, async () => {
     const now = new Date();
@@ -201,6 +269,51 @@ export async function adminRoutes(app: FastifyInstance) {
     });
 
     return player;
+  });
+
+  app.post("/players/:id/unban", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const user = request.user as { id: string; username: string };
+
+    const player = await prisma.player.update({
+      where: { id },
+      data: { isBanned: false, banType: "none" },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        adminId: user.id,
+        adminName: user.username,
+        action: "unban_player",
+        target: id,
+        details: `Unbanned ${player.username}`,
+      },
+    });
+
+    return player;
+  });
+
+  app.post("/guardians/:id/deactivate", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
+    const { id } = request.params as { id: string };
+    const user = request.user as { id: string; username: string };
+
+    const guardian = await prisma.guardian.findUnique({ where: { id } });
+    if (!guardian) return { error: "Guardian not found" };
+    if (!guardian.isActive) return guardian;
+
+    const updated = await prisma.guardian.update({ where: { id }, data: { isActive: false } });
+
+    await prisma.auditLog.create({
+      data: {
+        adminId: user.id,
+        adminName: user.username,
+        action: "deactivate_guardian",
+        target: id,
+        details: `Deactivated guardian ${guardian.name} (${guardian.rarity}) for player ${guardian.playerId}`,
+      },
+    });
+
+    return updated;
   });
 
   app.get("/config", { preHandler: [app.authenticate, requireAdminAccess] }, async () => {

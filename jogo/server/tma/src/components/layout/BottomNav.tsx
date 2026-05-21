@@ -7,6 +7,7 @@ export function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { isAdmin } = usePlayerStore();
+  const hasAdminKey = Boolean(localStorage.getItem("admin_key"));
 
   const nav = [
     { path: "/", icon: Home, label: "Farm" },
@@ -14,7 +15,7 @@ export function BottomNav() {
     { path: "/referrals", icon: Users, label: "Refs" },
     { path: "/withdraw", icon: ArrowDownToLine, label: "Withdraw" },
     { path: "/profile", icon: User, label: "Profile" },
-    ...(isAdmin ? [{ path: "/admin", icon: Settings, label: "Admin" }] : []),
+    ...(isAdmin || hasAdminKey ? [{ path: "/admin", icon: Settings, label: "Admin" }] : []),
   ];
 
   return (

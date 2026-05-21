@@ -8,6 +8,18 @@ function setToken(token: string) {
   localStorage.setItem("token", token);
 }
 
+function getAdminKey() {
+  return localStorage.getItem("admin_key");
+}
+
+function setAdminKey(key: string) {
+  localStorage.setItem("admin_key", key);
+}
+
+function clearAdminKey() {
+  localStorage.removeItem("admin_key");
+}
+
 function getTelegramWebApp() {
   return (window as any).Telegram?.WebApp as any | undefined;
 }
@@ -19,11 +31,13 @@ export function isTelegramWebApp() {
 
 async function request(path: string, options: RequestInit = {}) {
   const token = getToken();
+  const adminKey = getAdminKey();
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(adminKey ? { "x-admin-key": adminKey } : {}),
       ...options.headers,
     },
   });
@@ -32,6 +46,10 @@ async function request(path: string, options: RequestInit = {}) {
 }
 
 export const api = {
+  setAdminKey,
+  clearAdminKey,
+  hasToken: () => Boolean(getToken()),
+
   // Auth
   login: (telegramId: string, username: string, referralCode?: string, initData?: string) =>
     request("/auth/telegram", {
@@ -56,6 +74,12 @@ export const api = {
     const initData = tg.initData || "";
 
     const res = await api.login(telegramId, username, referralCode, initData);
+    if (res?.token) setToken(res.token);
+    return res;
+  },
+
+  adminWebLogin: async (id: string, code: string) => {
+    const res = await request("/admin/web-login", { method: "POST", body: JSON.stringify({ id, code }) });
     if (res?.token) setToken(res.token);
     return res;
   },
@@ -101,4 +125,22 @@ export const api = {
   adminGetConfig: () => request("/admin/config"),
   adminSetConfig: (key: string, value: string) =>
     request("/admin/config", { method: "POST", body: JSON.stringify({ key, value }) }),
+
+  adminCreateWebSession: (ttlMinutes = 10) =>
+    request("/admin/web-session", { method: "POST", body: JSON.stringify({ ttlMinutes }) }),
+
+  adminListPlayers: (search?: string, page = 1, limit = 20) => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    params.set("page", String(page));
+    params.set("limit", String(limit));
+    return request(`/admin/players?${params.toString()}`);
+  },
+
+  adminGetPlayer: (id: string) => request(`/players/${id}`),
+  adminEditBalance: (id: string, field: string, amount: number, reason: string) =>
+    request(`/players/${id}/balance`, { method: "PATCH", body: JSON.stringify({ field, amount, reason }) }),
+  adminBan: (id: string, banType: "soft" | "hard") => request(`/admin/players/${id}/ban`, { method: "POST", body: JSON.stringify({ banType }) }),
+  adminUnban: (id: string) => request(`/admin/players/${id}/unban`, { method: "POST", body: JSON.stringify({}) }),
+  adminDeactivateGuardian: (id: string) => request(`/admin/guardians/${id}/deactivate`, { method: "POST", body: JSON.stringify({}) }),
 };

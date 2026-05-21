@@ -119,6 +119,9 @@ export async function playerRoutes(app: FastifyInstance) {
   app.patch("/:id/balance", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     const { field, amount, reason } = request.body as { field: string; amount: number; reason: string };
+    const allowedFields = ["veBalance", "csBalance", "pendingVE", "pendingCS"] as const;
+    if (!allowedFields.includes(field as any)) return { error: "Invalid field" };
+    if (!Number.isFinite(amount)) return { error: "Invalid amount" };
 
     const player = await prisma.player.update({
       where: { id },

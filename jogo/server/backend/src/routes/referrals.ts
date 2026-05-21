@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../index";
 
 function getBotUsername() {
-  const raw = (process.env.BOT_USERNAME || process.env.TELEGRAM_BOT_USERNAME || "AlphaBot").trim();
+  const raw = (process.env.BOT_USERNAME || process.env.TELEGRAM_BOT_USERNAME || "alphap2ebot").trim();
   return raw.replace(/^@/, "");
 }
 

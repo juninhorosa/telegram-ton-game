@@ -8,6 +8,7 @@ import { ReferralsPage } from "./pages/ReferralsPage";
 import { WithdrawPage } from "./pages/WithdrawPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { AdminPage } from "./pages/AdminPage";
+import { WebLoginPage } from "./pages/WebLoginPage";
 import { api, isTelegramWebApp } from "./utils/api";
 import { usePlayerStore } from "./utils/store";
 
@@ -17,18 +18,18 @@ export default function App() {
 
   useEffect(() => {
     const run = async () => {
-      if (!isTelegramWebApp()) {
-        setAuth(false, "Abra este jogo pelo Telegram");
-        return;
-      }
-
       try {
-        await api.loginFromTelegram();
+        if (isTelegramWebApp()) {
+          await api.loginFromTelegram();
+        } else if (!api.hasToken()) {
+          setAuth(false, "Abra pelo Telegram. Admin no PC: use /web-login.");
+          return;
+        }
         const profile = await api.getProfile();
         setPlayer(profile);
         setAuth(true);
       } catch {
-        setAuth(false, "Falha no login. Tente reabrir pelo Telegram.");
+        setAuth(false, isTelegramWebApp() ? "Falha no login. Tente reabrir pelo Telegram." : "Sessão expirada. Gere um novo login web.");
       }
     };
     run();
@@ -74,6 +75,7 @@ export default function App() {
           <Route path="/withdraw" element={<WithdrawPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/web-login" element={<WebLoginPage />} />
         </Routes>
       </Layout>
     </BrowserRouter>

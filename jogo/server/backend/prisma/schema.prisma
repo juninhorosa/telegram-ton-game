@@ -44,6 +44,7 @@ model Player {
   transactions    Transaction[]
   withdrawals     Withdrawal[]
   deposits        Deposit[]
+  adminWebSessions AdminWebSession[]
   notes           AdminNote[]
   fraudFlags      FraudFlag[]
   referralCommissions ReferralCommission[]
@@ -162,4 +163,18 @@ model AuditLog {
 model SystemConfig {
   key   String @id
   value String
+}
+
+model AdminWebSession {
+  id            String   @id @default(cuid())
+  adminPlayerId String
+  adminPlayer   Player   @relation(fields: [adminPlayerId], references: [id])
+  codeHash      String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([adminPlayerId])
+  @@index([expiresAt])
+  @@index([usedAt])
 }
