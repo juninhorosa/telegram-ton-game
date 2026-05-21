@@ -13,6 +13,7 @@ import { withdrawalRoutes } from "./routes/withdrawals";
 import { farmingRoutes } from "./routes/farming";
 import { referralRoutes } from "./routes/referrals";
 import { adminRoutes } from "./routes/admin";
+import { depositRoutes } from "./routes/deposits";
 import { setupFarmingQueue } from "./jobs/farming";
 import { setupWithdrawalQueue } from "./jobs/withdrawals";
 import { authMiddleware } from "./middleware/auth";
@@ -45,6 +46,7 @@ async function main() {
   await app.register(withdrawalRoutes, { prefix: "/api/withdrawals" });
   await app.register(farmingRoutes, { prefix: "/api/farming" });
   await app.register(referralRoutes, { prefix: "/api/referrals" });
+  await app.register(depositRoutes, { prefix: "/api/deposits" });
   await app.register(adminRoutes, { prefix: "/api/admin" });
 
   // Health check

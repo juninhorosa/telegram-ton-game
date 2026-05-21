@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { TonConnectUIProvider } from "@tonconnect/ui-react";
 import App from "./App";
 import "./styles/index.css";
 
@@ -14,6 +15,8 @@ if (tg) {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <TonConnectUIProvider manifestUrl="/tonconnect-manifest.json">
+      <App />
+    </TonConnectUIProvider>
   </React.StrictMode>
 );

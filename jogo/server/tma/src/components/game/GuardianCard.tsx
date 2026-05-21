@@ -16,6 +16,7 @@ const RARITY_STYLES: Record<string, { bg: string; border: string; glow: string; 
   rare: { bg: "bg-blue-900/50", border: "border-blue-500", glow: "shadow-blue-500/20", label: "Rare" },
   epic: { bg: "bg-purple-900/50", border: "border-purple-500", glow: "shadow-purple-500/30", label: "Epic" },
   legendary: { bg: "bg-amber-900/30", border: "border-amber-500", glow: "shadow-amber-500/40", label: "Legendary" },
+  bot: { bg: "bg-emerald-900/30", border: "border-emerald-500", glow: "shadow-emerald-500/30", label: "Bot Farm" },
 };
 
 export function GuardianCard({ name, rarity, level, vePerHour, csPerHour, onClick }: GuardianCardProps) {
@@ -39,7 +40,8 @@ export function GuardianCard({ name, rarity, level, vePerHour, csPerHour, onClic
             rarity === "common" && "bg-slate-600 text-slate-300",
             rarity === "rare" && "bg-blue-600 text-blue-200",
             rarity === "epic" && "bg-purple-600 text-purple-200",
-            rarity === "legendary" && "bg-amber-600 text-amber-200"
+            rarity === "legendary" && "bg-amber-600 text-amber-200",
+            rarity === "bot" && "bg-emerald-600 text-emerald-200"
           )}>
             {style.label}
           </span>
@@ -56,12 +58,14 @@ export function GuardianCard({ name, rarity, level, vePerHour, csPerHour, onClic
           rarity === "common" && "bg-slate-700",
           rarity === "rare" && "bg-blue-800",
           rarity === "epic" && "bg-purple-800",
-          rarity === "legendary" && "bg-amber-800 glow-pulse"
+          rarity === "legendary" && "bg-amber-800 glow-pulse",
+          rarity === "bot" && "bg-emerald-800"
         )}>
           {rarity === "common" && "✨"}
           {rarity === "rare" && "⚡"}
           {rarity === "epic" && "🔮"}
           {rarity === "legendary" && "👑"}
+          {rarity === "bot" && "🤖"}
         </div>
       </div>
 

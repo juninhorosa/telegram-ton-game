@@ -1,7 +1,15 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
+import { addDays, differenceInCalendarDays } from "date-fns";
 import { prisma } from "../index";
+
+async function getNumberConfig(key: string, fallback: number) {
+  const row = await prisma.systemConfig.findUnique({ where: { key } });
+  if (!row) return fallback;
+  const n = Number(row.value);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export async function withdrawalRoutes(app: FastifyInstance) {
   // Request withdrawal
@@ -23,21 +31,35 @@ export async function withdrawalRoutes(app: FastifyInstance) {
       return { error: "Account is banned" };
     }
 
-    // Check daily limit
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayWithdrawals = await prisma.withdrawal.aggregate({
-      where: { playerId: user.id, requestedAt: { gte: todayStart } },
-      _sum: { veAmount: true },
+    const veToTonRate = await getNumberConfig("ve_to_ton_rate", 0.005);
+    const feePercent = await getNumberConfig("withdraw_fee_percent", 5);
+    const withdrawCooldownDays = await getNumberConfig("withdraw_cooldown_days", 15);
+    const freeWithdrawWaitDays = await getNumberConfig("free_withdraw_wait_days", 15);
+
+    const lastWithdrawal = await prisma.withdrawal.findFirst({
+      where: { playerId: user.id, status: { in: ["pending", "approved", "processing", "completed"] } },
+      orderBy: { requestedAt: "desc" },
+      select: { requestedAt: true },
     });
 
-    if ((todayWithdrawals._sum.veAmount || 0) + amount > 500) {
-      return { error: "Daily withdrawal limit (500 VE) exceeded" };
+    const now = new Date();
+    if (lastWithdrawal) {
+      const cooldownUntil = addDays(lastWithdrawal.requestedAt, withdrawCooldownDays);
+      if (cooldownUntil.getTime() > now.getTime()) {
+        return { error: `Withdrawal cooldown active until ${cooldownUntil.toISOString()}` };
+      }
     }
 
-    const feePercent = 5;
+    const hasDeposit = player.tonDepositedTotal > 0;
+    if (!hasDeposit) {
+      const daysSinceStart = differenceInCalendarDays(now, player.createdAt);
+      if (daysSinceStart < freeWithdrawWaitDays) {
+        return { error: `Free users can withdraw after ${freeWithdrawWaitDays} days from start` };
+      }
+    }
+
     const netAmount = amount * (1 - feePercent / 100);
-    const tonAmount = netAmount * 0.005; // 1 VE = 0.005 TON
+    const tonAmount = netAmount * veToTonRate;
 
     const withdrawal = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.player.update({

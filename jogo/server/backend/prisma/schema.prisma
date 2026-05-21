@@ -14,10 +14,17 @@ model Player {
   tonWallet       String?
   passwordHash    String?
 
+  level           Int       @default(1)
+  xp              Int       @default(0)
+
   veBalance       Float     @default(0)
   csBalance       Int       @default(0)
   pendingVE       Float     @default(0)
   pendingCS       Int       @default(0)
+
+  tonDepositedTotal Float   @default(0)
+  lastAdRewardAt  DateTime?
+  lastBotFarmPurchaseAt DateTime?
 
   riskScore       Int       @default(0)
   isBanned        Boolean   @default(false)
@@ -35,12 +42,28 @@ model Player {
   guardians       Guardian[]
   transactions    Transaction[]
   withdrawals     Withdrawal[]
+  deposits        Deposit[]
   notes           AdminNote[]
   fraudFlags      FraudFlag[]
   referralCommissions ReferralCommission[]
 
   @@index([telegramId])
   @@index([referralCode])
+}
+
+model Deposit {
+  id          String   @id @default(cuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id])
+  tonAmount   Float
+  txHash      String   @unique
+  status      String   @default("pending")
+  requestedAt DateTime @default(now())
+  approvedAt  DateTime?
+
+  @@index([playerId])
+  @@index([status])
+  @@index([requestedAt])
 }
 
 model Guardian {

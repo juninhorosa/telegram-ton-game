@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "prisma db push && node dist/index.js",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
@@ -26,6 +26,7 @@
     "jogo-telegram": "file:../../..",
     "nanoid": "^5.0.0",
     "telegraf": "^4.16.0",
+    "telegram-ton-game": "file:../../..",
     "zod": "^3.23.0"
   },
   "devDependencies": {

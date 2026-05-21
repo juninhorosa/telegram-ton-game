@@ -1,12 +1,13 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
+import crypto from "node:crypto";
 import { prisma } from "../index";
 
 const registerSchema = z.object({
   telegramId: z.string(),
   username: z.string().min(3).max(32),
   referralCode: z.string().optional(),
+  initData: z.string().optional(),
 });
 
 const loginSchema = z.object({
@@ -14,10 +15,55 @@ const loginSchema = z.object({
   username: z.string(),
 });
 
+function verifyTelegramInitData(initData: string, botToken: string) {
+  const params = new URLSearchParams(initData);
+  const hash = params.get("hash");
+  if (!hash) return { ok: false as const, reason: "missing_hash" as const };
+
+  const entries: string[] = [];
+  params.forEach((value, key) => {
+    if (key === "hash") return;
+    entries.push(`${key}=${value}`);
+  });
+  entries.sort();
+  const dataCheckString = entries.join("\n");
+
+  const secretKey = crypto.createHmac("sha256", "WebAppData").update(botToken).digest();
+  const calculatedHash = crypto.createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
+  if (calculatedHash !== hash) return { ok: false as const, reason: "bad_hash" as const };
+
+  const authDate = params.get("auth_date");
+  if (!authDate) return { ok: false as const, reason: "missing_auth_date" as const };
+
+  return { ok: true as const };
+}
+
+async function getNumberConfig(key: string, fallback: number) {
+  const row = await prisma.systemConfig.findUnique({ where: { key } });
+  if (!row) return fallback;
+  const n = Number(row.value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function computeVePerHourFromTonRoi(tonPrice: number, roiDays: number, veToTonRate: number) {
+  const tonPerDay = tonPrice / roiDays;
+  const vePerDay = tonPerDay / veToTonRate;
+  return vePerDay / 24;
+}
+
 export async function authRoutes(app: FastifyInstance) {
   // Register / Login via Telegram
   app.post("/telegram", async (request, reply) => {
     const body = registerSchema.parse(request.body);
+
+    const botToken = process.env.TELEGRAM_BOT_TOKEN;
+    if (botToken && body.initData) {
+      const check = verifyTelegramInitData(body.initData, botToken);
+      if (!check.ok) {
+        reply.code(401);
+        return { error: "Invalid Telegram login" };
+      }
+    }
 
     let player = await prisma.player.findUnique({
       where: { telegramId: body.telegramId },
@@ -45,6 +91,8 @@ export async function authRoutes(app: FastifyInstance) {
       });
 
       // Give free Common guardian
+      const veToTonRate = await getNumberConfig("ve_to_ton_rate", 0.005);
+      const vePerHour = computeVePerHourFromTonRoi(0.5, 60, veToTonRate);
       await prisma.guardian.create({
         data: {
           playerId: player.id,
@@ -52,7 +100,7 @@ export async function authRoutes(app: FastifyInstance) {
           rarity: "common",
           level: 1,
           farmingPower: 1.0,
-          vePerHour: 0.08,
+          vePerHour,
           csPerHour: 12,
         },
       });

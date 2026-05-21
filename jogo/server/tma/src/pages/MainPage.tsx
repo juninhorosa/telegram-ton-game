@@ -10,6 +10,7 @@ export function MainPage() {
   const { setPlayer, updateBalances, ...player } = usePlayerStore();
   const [guardians, setGuardians] = useState<any[]>([]);
   const [farmingStatus, setFarmingStatus] = useState<any>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     loadData();
@@ -25,8 +26,9 @@ export function MainPage() {
       setPlayer(profile);
       setFarmingStatus(farming);
       setGuardians(guardiansData);
+      setError("");
     } catch (err) {
-      console.log("Load failed - using demo mode");
+      setError("Falha ao carregar dados. Tente reabrir pelo Telegram.");
     }
   };
 
@@ -58,6 +60,18 @@ export function MainPage() {
         csPerHour={player.totalCSPerHour}
       />
 
+      {player.economy && (
+        <div className="text-center text-xs text-gray-500">
+          1 VE ≈ {player.economy.veToTonRate.toFixed(6)} TON
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-[#1a1a2e] rounded-xl p-3 border border-red-500/30 text-center">
+          <p className="text-xs text-red-300">{error}</p>
+        </div>
+      )}
+
       {/* Pending Resources */}
       {farmingStatus && farmingStatus.pendingVE > 0 && (
         <motion.div
@@ -74,6 +88,29 @@ export function MainPage() {
       {/* Collect Button */}
       <div className="flex justify-center py-4">
         <CollectButton onCollect={handleCollect} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <button
+          onClick={async () => {
+            const res = await api.claimAdReward();
+            if (res?.error) return;
+            await loadData();
+          }}
+          className="bg-[#1a1a2e] rounded-xl p-3 border border-[#2a2a4a] text-sm"
+        >
+          Assistir anúncio (VE)
+        </button>
+        <button
+          onClick={async () => {
+            const res = await api.buyBotFarm();
+            if (res?.error) return;
+            await loadData();
+          }}
+          className="bg-[#1a1a2e] rounded-xl p-3 border border-[#2a2a4a] text-sm"
+        >
+          Comprar Bot Farm
+        </button>
       </div>
 
       {/* Active Guardians Preview */}

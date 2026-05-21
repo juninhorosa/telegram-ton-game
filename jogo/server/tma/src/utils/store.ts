@@ -3,6 +3,9 @@ import { create } from "zustand";
 interface PlayerState {
   id: string;
   username: string;
+  tonWallet?: string | null;
+  level: number;
+  xp: number;
   veBalance: number;
   csBalance: number;
   pendingVE: number;
@@ -11,14 +14,32 @@ interface PlayerState {
   totalCSPerHour: number;
   guardianCount: number;
   referralCount: number;
+  economy?: {
+    veToTonRate: number;
+    withdrawFeePercent: number;
+    withdrawCooldownDays: number;
+    freeWithdrawWaitDays: number;
+  };
+  withdrawEligibility?: {
+    canWithdraw: boolean;
+    reason: string | null;
+    cooldownUntil: string | null;
+    hasDeposit: boolean;
+  };
+  isAuthReady: boolean;
+  authError: string;
   isLoaded: boolean;
   setPlayer: (data: Partial<PlayerState>) => void;
   updateBalances: (ve: number, cs: number) => void;
+  setAuth: (isReady: boolean, error?: string) => void;
 }
 
 export const usePlayerStore = create<PlayerState>((set) => ({
   id: "",
   username: "",
+  tonWallet: null,
+  level: 1,
+  xp: 0,
   veBalance: 0,
   csBalance: 0,
   pendingVE: 0,
@@ -27,6 +48,10 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   totalCSPerHour: 0,
   guardianCount: 0,
   referralCount: 0,
+  economy: undefined,
+  withdrawEligibility: undefined,
+  isAuthReady: false,
+  authError: "",
   isLoaded: false,
   setPlayer: (data) => set((state) => ({ ...state, ...data, isLoaded: true })),
   updateBalances: (ve, cs) =>
@@ -36,4 +61,5 @@ export const usePlayerStore = create<PlayerState>((set) => ({
       pendingVE: 0,
       pendingCS: 0,
     })),
+  setAuth: (isReady, error) => set(() => ({ isAuthReady: isReady, authError: error || "" })),
 }));

@@ -5,7 +5,7 @@ import { usePlayerStore } from "../utils/store";
 import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle } from "lucide-react";
 
 export function WithdrawPage() {
-  const { veBalance } = usePlayerStore();
+  const { veBalance, economy, withdrawEligibility } = usePlayerStore();
   const [amount, setAmount] = useState("");
   const [withdrawals, setWithdrawals] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -20,6 +20,7 @@ export function WithdrawPage() {
     const val = parseFloat(amount);
     if (isNaN(val) || val < 10) { setError("Minimum withdrawal: 10 VE"); return; }
     if (val > veBalance) { setError("Insufficient balance"); return; }
+    if (withdrawEligibility && !withdrawEligibility.canWithdraw) { setError(withdrawEligibility.reason || "Not eligible"); return; }
 
     setLoading(true);
     try {
@@ -53,11 +54,16 @@ export function WithdrawPage() {
       <div className="bg-gradient-to-br from-void-800 to-[#1a1a2e] rounded-xl p-4 border border-void-500/30">
         <p className="text-xs text-gray-400 mb-1">Available Balance</p>
         <p className="text-3xl font-bold text-cyan-400">{veBalance.toFixed(2)} VE</p>
-        <p className="text-xs text-gray-500 mt-1">≈ {(veBalance * 0.005).toFixed(4)} TON</p>
+        {economy && <p className="text-xs text-gray-500 mt-1">≈ {(veBalance * economy.veToTonRate).toFixed(6)} TON</p>}
       </div>
 
       {/* Withdraw Form */}
       <div className="bg-[#1a1a2e] rounded-xl p-4 border border-[#2a2a4a]">
+        {withdrawEligibility && !withdrawEligibility.canWithdraw && (
+          <div className="text-xs text-amber-300 mb-3">
+            {withdrawEligibility.reason}
+          </div>
+        )}
         <div className="flex gap-2 mb-3">
           <input
             type="number"
@@ -76,8 +82,14 @@ export function WithdrawPage() {
 
         {amount && (
           <div className="text-xs text-gray-500 mb-3 space-y-1">
-            <p>Fee: 5% → Net: {(parseFloat(amount || "0") * 0.95).toFixed(2)} VE</p>
-            <p>You receive: ~{(parseFloat(amount || "0") * 0.95 * 0.005).toFixed(4)} TON</p>
+            <p>
+              Fee: {(economy?.withdrawFeePercent ?? 5)}% → Net: {(parseFloat(amount || "0") * (1 - (economy?.withdrawFeePercent ?? 5) / 100)).toFixed(2)} VE
+            </p>
+            {economy && (
+              <p>
+                You receive: ~{(parseFloat(amount || "0") * (1 - economy.withdrawFeePercent / 100) * economy.veToTonRate).toFixed(6)} TON
+              </p>
+            )}
           </div>
         )}
 
@@ -87,7 +99,7 @@ export function WithdrawPage() {
         <motion.button
           whileTap={{ scale: 0.97 }}
           onClick={handleWithdraw}
-          disabled={loading || !amount}
+          disabled={loading || !amount || (withdrawEligibility ? !withdrawEligibility.canWithdraw : false)}
           className="w-full bg-gradient-to-r from-void-500 to-cyber-500 py-3 rounded-xl text-sm font-semibold disabled:opacity-50"
         >
           {loading ? "Processing..." : "Request Withdrawal"}

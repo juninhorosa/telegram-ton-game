@@ -2,22 +2,20 @@ import { useEffect, useState } from "react";
 import { api } from "../utils/api";
 import { usePlayerStore } from "../utils/store";
 import { Wallet, Shield, Calendar, Activity } from "lucide-react";
+import { TonConnectButton, useTonWallet } from "@tonconnect/ui-react";
 
 export function ProfilePage() {
   const player = usePlayerStore();
   const [profile, setProfile] = useState<any>(null);
+  const wallet = useTonWallet();
 
   useEffect(() => { api.getProfile().then(setProfile).catch(() => {}); }, []);
 
-  const connectWallet = () => {
-    // In production: use TonConnect UI
-    const wallet = prompt("Enter TON wallet address:");
-    if (wallet) {
-      api.connectWallet(wallet).then(() => {
-        setProfile((prev: any) => ({ ...prev, tonWallet: wallet }));
-      });
-    }
-  };
+  const xpPerLevel = 1000;
+  const level = profile?.level ?? 1;
+  const xp = profile?.xp ?? 0;
+  const xpIntoLevel = xp % xpPerLevel;
+  const xpProgress = Math.min(1, xpIntoLevel / xpPerLevel);
 
   return (
     <div className="space-y-4">
@@ -32,6 +30,16 @@ export function ProfilePage() {
           <div>
             <h2 className="font-semibold">{player.username || "Player"}</h2>
             <p className="text-xs text-gray-500">ID: {profile?.telegramId || "..."}</p>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-xs text-gray-400 mb-2">
+            <span>Level {level}</span>
+            <span>{xpIntoLevel}/{xpPerLevel} XP</span>
+          </div>
+          <div className="h-2 bg-[#252540] rounded-full overflow-hidden">
+            <div className="h-2 bg-gradient-to-r from-cyan-500 to-purple-500" style={{ width: `${xpProgress * 100}%` }} />
           </div>
         </div>
 
@@ -53,18 +61,21 @@ export function ProfilePage() {
           <Wallet size={16} className="text-cyan-400" />
           <h3 className="text-sm font-semibold">TON Wallet</h3>
         </div>
+        <div className="pb-3">
+          <TonConnectButton />
+        </div>
         {profile?.tonWallet ? (
           <div className="bg-[#252540] rounded-lg p-3">
             <p className="text-xs font-mono text-gray-300">{profile.tonWallet}</p>
             <p className="text-xs text-emerald-400 mt-1">✓ Connected</p>
           </div>
         ) : (
-          <button
-            onClick={connectWallet}
-            className="w-full bg-void-600 py-2 rounded-lg text-sm"
-          >
-            Connect Wallet
-          </button>
+          <div className="text-xs text-amber-300">Conecte sua carteira acima para liberar o jogo.</div>
+        )}
+        {wallet?.account?.address && (
+          <div className="text-xs text-gray-500 mt-2 font-mono">
+            Detected: {wallet.account.address}
+          </div>
         )}
       </div>
 
@@ -82,7 +93,13 @@ export function ProfilePage() {
             <span className="text-sm text-gray-400 flex items-center gap-2">
               <Activity size={14} /> Total Withdrawn
             </span>
-            <span className="text-sm text-cyan-400">{profile?.totalWithdrawn?.toFixed(2) || "0.00"} VE</span>
+            <span className="text-sm text-cyan-400">{(profile?.totals?.withdrawnVE || 0).toFixed(2)} VE</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-400 flex items-center gap-2">
+              <Wallet size={14} /> TON Deposited
+            </span>
+            <span className="text-sm text-cyan-400">{(profile?.tonDepositedTotal || 0).toFixed(3)} TON</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-400 flex items-center gap-2">
