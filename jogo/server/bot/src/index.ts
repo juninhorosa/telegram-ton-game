@@ -3,7 +3,7 @@ import { Telegraf, Context } from "telegraf";
 import http from "node:http";
 
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
-const WEBAPP_URL = process.env.WEBAPP_URL || "https://tma.cryptorealm.io";
+const WEBAPP_URL = process.env.WEBAPP_URL || "https://telegram-ton-game.juninhorosa11-4b3.workers.dev";
 const API_BASE = process.env.API_BASE || "http://localhost:3001/api";
 const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
 const PORT = parseInt(process.env.PORT || "3000");
@@ -62,7 +62,7 @@ bot.start(async (ctx) => {
   if (auth?.token) tokenCache.set(user.id.toString(), auth.token);
 
   await ctx.reply(
-    `Welcome to *CryptoRealm: Guardians of the Void!*`,
+    `Bem-vindo ao *ALPHA!*`,
     {
       parse_mode: "Markdown",
       reply_markup: {
@@ -113,7 +113,7 @@ bot.action("referrals", async (ctx) => {
     const data = await apiCall(`/referrals/link`, { token });
     await ctx.answerCbQuery();
     await ctx.editMessageText(
-      `*Invite Friends & Earn!*\n\n` +
+      `*Convide amigos e ganhe!*\n\n` +
       `Share your referral link:\n\`${data.link}\`\n\n` +
       `*Commission Structure:*\n` +
       `• Level 1 (Direct): 10%\n` +
@@ -124,7 +124,7 @@ bot.action("referrals", async (ctx) => {
         parse_mode: "Markdown",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📤 Share Link", url: `https://t.me/share/url?url=${encodeURIComponent(data.link)}&text=Join%20CryptoRealm%20and%20earn%20crypto!` }],
+            [{ text: "📤 Share Link", url: `https://t.me/share/url?url=${encodeURIComponent(data.link)}&text=Join%20ALPHA%20and%20earn%20crypto!` }],
             [{ text: "🔙 Back", callback_data: "back" }],
           ],
         },
@@ -139,7 +139,7 @@ bot.action("referrals", async (ctx) => {
 bot.action("help", async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    `*CryptoRealm: Help*\n\n` +
+    `*ALPHA: Ajuda*\n\n` +
     `🎮 *How to Play:*\n` +
     `1. Get your free Guardian\n` +
     `2. Collect resources automatically\n` +
@@ -151,9 +151,7 @@ bot.action("help", async (ctx) => {
     `• Min: 10 VE\n` +
     `• Fee: 5%\n` +
     `• Daily limit: 500 VE\n\n` +
-    `🔗 *Links:*\n` +
-    `• [Community](https://t.me/cryptorealm_chat)\n` +
-    `• [Announcements](https://t.me/cryptorealm)`,
+    `🔗 *Links:* Em breve`,
     {
       parse_mode: "Markdown",
       reply_markup: {
@@ -170,7 +168,7 @@ bot.action("help", async (ctx) => {
 bot.action("back", async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.editMessageText(
-    `*CryptoRealm: Guardians of the Void*`,
+    `*ALPHA*`,
     {
       parse_mode: "Markdown",
       reply_markup: {
@@ -229,12 +227,12 @@ if (WEBHOOK_URL) {
   bot.telegram.setWebhook(fullHookUrl).then(() => {
     const server = http.createServer(bot.webhookCallback(hookPath));
     server.listen(PORT, () => {
-      console.log(`CryptoRealm Bot webhook listening on :${PORT} (${fullHookUrl})`);
+      console.log(`ALPHA Bot webhook listening on :${PORT} (${fullHookUrl})`);
     });
   });
 } else {
   bot.launch().then(() => {
-    console.log("CryptoRealm Bot running");
+    console.log("ALPHA Bot running");
   });
 }
 

@@ -47,9 +47,9 @@ export function MainPage() {
         className="text-center py-2"
       >
         <h1 className="text-xl font-bold bg-gradient-to-r from-void-400 to-cyber-400 bg-clip-text text-transparent">
-          CryptoRealm
+          ALPHA
         </h1>
-        <p className="text-xs text-gray-500">Guardians of the Void</p>
+        <p className="text-xs text-gray-500">ALPHA</p>
       </motion.div>
 
       {/* Resources */}

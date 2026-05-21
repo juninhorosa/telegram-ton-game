@@ -49,7 +49,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#0a0a0f] text-white flex items-center justify-center p-6">
         <div className="max-w-sm w-full bg-[#1a1a2e] border border-[#2a2a4a] rounded-2xl p-5 space-y-3">
-          <h1 className="text-lg font-semibold">Alpha</h1>
+          <h1 className="text-lg font-semibold">ALPHA</h1>
           <p className="text-sm text-gray-300">{authError}</p>
         </div>
       </div>

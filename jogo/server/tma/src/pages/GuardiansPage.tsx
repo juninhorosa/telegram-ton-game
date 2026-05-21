@@ -9,6 +9,7 @@ export function GuardiansPage() {
   const [guardians, setGuardians] = useState<any[]>([]);
   const [showShop, setShowShop] = useState(false);
   const [selectedRarity, setSelectedRarity] = useState<string | null>(null);
+  const [shopError, setShopError] = useState("");
 
   useEffect(() => { api.getGuardians().then(setGuardians).catch(() => {}); }, []);
 
@@ -17,6 +18,9 @@ export function GuardiansPage() {
     if (!result.error) {
       setGuardians((prev) => [...prev, result]);
       setShowShop(false);
+      setShopError("");
+    } else {
+      setShopError(String(result.error));
     }
   };
 
@@ -35,10 +39,10 @@ export function GuardiansPage() {
   };
 
   const shopItems = [
-    { rarity: "common", name: "Aether Sprite", price: "0.5 TON / 100 VE", icon: "✨" },
-    { rarity: "rare", name: "Storm Sentinel", price: "2.0 TON / 400 VE", icon: "⚡" },
-    { rarity: "epic", name: "Void Titan", price: "7.5 TON / 1500 VE", icon: "🔮" },
-    { rarity: "legendary", name: "Cosmic Leviathan", price: "25 TON / 5000 VE", icon: "👑" },
+    { rarity: "common", name: "Aether Sprite", price: "100 VE", icon: "✨" },
+    { rarity: "rare", name: "Storm Sentinel", price: "400 VE", icon: "⚡" },
+    { rarity: "epic", name: "Void Titan", price: "1500 VE", icon: "🔮" },
+    { rarity: "legendary", name: "Cosmic Leviathan", price: "5000 VE", icon: "👑" },
   ];
 
   return (
@@ -64,6 +68,11 @@ export function GuardiansPage() {
           >
             <div className="bg-[#1a1a2e] rounded-xl p-4 border border-void-500/30 space-y-3">
               <h3 className="text-sm font-semibold">Buy Guardian</h3>
+              {shopError && (
+                <div className="bg-[#252540] rounded-lg p-2 text-xs text-red-300 border border-red-500/20">
+                  {shopError}
+                </div>
+              )}
               {shopItems.map((item) => (
                 <div key={item.rarity} className="flex items-center justify-between p-3 bg-[#252540] rounded-lg">
                   <div className="flex items-center gap-3">
@@ -74,12 +83,6 @@ export function GuardiansPage() {
                     </div>
                   </div>
                   <div className="flex gap-2">
-                    <button
-                      onClick={() => handleBuy(item.rarity, "ton")}
-                      className="bg-cyan-600 px-2 py-1 rounded text-xs"
-                    >
-                      TON
-                    </button>
                     <button
                       onClick={() => handleBuy(item.rarity, "ve")}
                       className="bg-purple-600 px-2 py-1 rounded text-xs"

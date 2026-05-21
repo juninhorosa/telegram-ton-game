@@ -1,4 +1,4 @@
-;; CryptoRealm Treasury Contract
+;; ALPHA Treasury Contract
 ;; Manages game funds: receives TON from purchases, sends TON for withdrawals
 
 #include "imports/stdlib.fc";

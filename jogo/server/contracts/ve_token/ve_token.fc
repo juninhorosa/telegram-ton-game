@@ -1,4 +1,4 @@
-;; CryptoRealm VE (Void Energy) Token Contract
+;; ALPHA VE (Void Energy) Token Contract
 ;; Jetton standard implementation for VE token on TON
 
 #include "imports/stdlib.fc";

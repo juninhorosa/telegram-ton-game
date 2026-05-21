@@ -121,22 +121,24 @@ export async function authRoutes(app: FastifyInstance) {
 
     if (!player) throw new Error("Player not found");
 
-    if (!player.isAdmin) {
-      const adminRow = await prisma.systemConfig.findUnique({ where: { key: "admin_player_id" } });
-      if (!adminRow) {
-        const currentPlayer = player;
-        player = await prisma.$transaction(async (tx) => {
-          try {
-            await tx.systemConfig.create({ data: { key: "admin_player_id", value: currentPlayer.id } });
-            return tx.player.update({ where: { id: currentPlayer.id }, data: { isAdmin: true } });
-          } catch (err) {
-            if (err && typeof err === "object" && (err as Prisma.PrismaClientKnownRequestError).code === "P2002") {
-              return currentPlayer;
-            }
-            throw err;
+    const adminRow = await prisma.systemConfig.findUnique({ where: { key: "admin_player_id" } });
+    if (adminRow?.value === player.id && !player.isAdmin) {
+      player = await prisma.player.update({ where: { id: player.id }, data: { isAdmin: true } });
+    }
+
+    if (!adminRow && !player.isAdmin) {
+      const currentPlayer = player;
+      player = await prisma.$transaction(async (tx) => {
+        try {
+          await tx.systemConfig.create({ data: { key: "admin_player_id", value: currentPlayer.id } });
+          return tx.player.update({ where: { id: currentPlayer.id }, data: { isAdmin: true } });
+        } catch (err) {
+          if (err && typeof err === "object" && (err as Prisma.PrismaClientKnownRequestError).code === "P2002") {
+            return currentPlayer;
           }
-        });
-      }
+          throw err;
+        }
+      });
     }
 
     const token = app.jwt.sign({

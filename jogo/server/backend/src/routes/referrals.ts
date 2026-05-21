@@ -1,6 +1,11 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../index";
 
+function getBotUsername() {
+  const raw = (process.env.BOT_USERNAME || process.env.TELEGRAM_BOT_USERNAME || "AlphaBot").trim();
+  return raw.replace(/^@/, "");
+}
+
 export async function referralRoutes(app: FastifyInstance) {
   // Get referral info
   app.get("/", { preHandler: [app.authenticate] }, async (request) => {
@@ -46,9 +51,10 @@ export async function referralRoutes(app: FastifyInstance) {
   app.get("/link", { preHandler: [app.authenticate] }, async (request) => {
     const user = request.user as { id: string };
     const player = await prisma.player.findUniqueOrThrow({ where: { id: user.id } });
+    const botUsername = getBotUsername();
 
     return {
-      link: `https://t.me/CryptoRealmBot?start=${player.referralCode}`,
+      link: `https://t.me/${botUsername}?start=${player.referralCode}`,
       code: player.referralCode,
     };
   });

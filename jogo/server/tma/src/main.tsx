@@ -13,9 +13,12 @@ if (tg) {
   tg.setBackgroundColor("#0a0a0f");
 }
 
+const manifestUrl = new URL("/tonconnect-manifest.json", window.location.href).toString();
+const twaReturnUrl = window.location.href as `${string}://${string}`;
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <TonConnectUIProvider manifestUrl="/tonconnect-manifest.json">
+    <TonConnectUIProvider manifestUrl={manifestUrl} actionsConfiguration={{ twaReturnUrl }}>
       <App />
     </TonConnectUIProvider>
   </React.StrictMode>

@@ -72,10 +72,14 @@ export async function guardianRoutes(app: FastifyInstance) {
       return { error: "Maximum guardians reached (12)" };
     }
 
-    const price = GUARDIAN_PRICES[rarity];
-    const cost = payWith === "ton" ? price.ton : price.ve;
+    if (payWith === "ton") {
+      return { error: "Buying with TON is not available yet. Use VE." };
+    }
 
-    if (payWith === "ve" && player.veBalance < cost) {
+    const price = GUARDIAN_PRICES[rarity];
+    const cost = price.ve;
+
+    if (player.veBalance < cost) {
       return { error: "Insufficient VE balance" };
     }
 
@@ -112,7 +116,7 @@ export async function guardianRoutes(app: FastifyInstance) {
         playerId: user.id,
         type: "purchase",
         amount: cost,
-        currency: payWith === "ton" ? "TON" : "VE",
+        currency: "VE",
         description: `Purchased ${name} (${rarity})`,
       },
     });
