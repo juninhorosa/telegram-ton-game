@@ -55,6 +55,9 @@ export async function playerRoutes(app: FastifyInstance) {
     const freeWithdrawWaitDays = await getNumberConfig("free_withdraw_wait_days", 15);
     const adLink = await getStringConfig("ad_link", "");
     const adMinSeconds = await getNumberConfig("ad_min_seconds", 8);
+    const moneytagScriptSrc = await getStringConfig("moneytag_script_src", "");
+    const moneytagShowFn = await getStringConfig("moneytag_show_fn", "");
+    const moneytagShowPayload = await getStringConfig("moneytag_show_payload", "");
 
     const now = new Date();
     const lastWithdrawal = await prisma.withdrawal.findFirst({
@@ -114,6 +117,9 @@ export async function playerRoutes(app: FastifyInstance) {
       publicConfig: {
         adLink,
         adMinSeconds,
+        moneytagScriptSrc,
+        moneytagShowFn,
+        moneytagShowPayload,
       },
     };
   });

@@ -14,6 +14,7 @@ export function MainPage() {
   const [adOpen, setAdOpen] = useState(false);
   const [adCountdown, setAdCountdown] = useState(0);
   const [adError, setAdError] = useState("");
+  const [adBusy, setAdBusy] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -46,6 +47,84 @@ export function MainPage() {
     const result = await api.collect();
     updateBalances(result.earnedVE, result.earnedCS);
     return result;
+  };
+
+  const ensureScriptLoaded = async (src: string) => {
+    const existing = document.querySelector(`script[data-alpha-src="${src}"]`) as HTMLScriptElement | null;
+    if (existing) {
+      if ((existing as any)._alphaLoaded) return;
+      await new Promise<void>((resolve, reject) => {
+        existing.addEventListener("load", () => resolve());
+        existing.addEventListener("error", () => reject(new Error("script_load_failed")));
+      });
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = src;
+      s.async = true;
+      s.defer = true;
+      s.setAttribute("data-alpha-src", src);
+      s.onload = () => {
+        (s as any)._alphaLoaded = true;
+        resolve();
+      };
+      s.onerror = () => reject(new Error("script_load_failed"));
+      document.head.appendChild(s);
+    });
+  };
+
+  const tryShowMoneytag = async () => {
+    const cfg = player.publicConfig;
+    const scriptSrc = cfg?.moneytagScriptSrc || "";
+    const fnName = cfg?.moneytagShowFn || "";
+    const payloadRaw = cfg?.moneytagShowPayload || "";
+    if (!scriptSrc || !fnName) return false;
+
+    try {
+      await ensureScriptLoaded(scriptSrc);
+    } catch {
+      return false;
+    }
+
+    const fn = (window as any)[fnName];
+    if (typeof fn !== "function") return false;
+
+    let payload: any = undefined;
+    if (payloadRaw) {
+      try {
+        payload = JSON.parse(payloadRaw);
+      } catch {
+        payload = payloadRaw;
+      }
+    }
+
+    let rewarded = false;
+    const rewardOnce = async () => {
+      if (rewarded) return;
+      rewarded = true;
+      const res = await api.claimAdReward();
+      if (res?.error) {
+        setAdError(String(res.error));
+        return;
+      }
+      await loadData();
+    };
+
+    try {
+      const ret = payload !== undefined ? fn(payload, rewardOnce) : fn(rewardOnce);
+      if (ret && typeof ret.then === "function") {
+        await ret.then(rewardOnce);
+      } else {
+        setTimeout(() => {
+          if (!rewarded) rewardOnce().catch(() => {});
+        }, 15000);
+      }
+      return true;
+    } catch {
+      return false;
+    }
   };
 
   return (
@@ -104,19 +183,29 @@ export function MainPage() {
         <button
           onClick={async () => {
             setAdError("");
-            const adLink = player.publicConfig?.adLink || "";
-            if (adLink) {
-              setAdOpen(true);
-              setAdCountdown(Math.max(0, Number(player.publicConfig?.adMinSeconds ?? 8)));
-              return;
+            setAdBusy(true);
+            try {
+              const usedMoneytag = await tryShowMoneytag();
+              if (usedMoneytag) return;
+
+              const adLink = player.publicConfig?.adLink || "";
+              if (adLink) {
+                setAdOpen(true);
+                setAdCountdown(Math.max(0, Number(player.publicConfig?.adMinSeconds ?? 8)));
+                return;
+              }
+
+              const res = await api.claimAdReward();
+              if (res?.error) return;
+              await loadData();
+            } finally {
+              setAdBusy(false);
             }
-            const res = await api.claimAdReward();
-            if (res?.error) return;
-            await loadData();
           }}
-          className="bg-[#1a1a2e] rounded-xl p-3 border border-[#2a2a4a] text-sm"
+          disabled={adBusy}
+          className="bg-[#1a1a2e] rounded-xl p-3 border border-[#2a2a4a] text-sm disabled:opacity-50"
         >
-          Assistir anúncio (VE)
+          {adBusy ? "Abrindo..." : "Assistir anúncio (VE)"}
         </button>
         <button
           onClick={async () => {

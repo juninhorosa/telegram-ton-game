@@ -24,6 +24,9 @@ interface PlayerState {
   publicConfig?: {
     adLink: string;
     adMinSeconds: number;
+    moneytagScriptSrc: string;
+    moneytagShowFn: string;
+    moneytagShowPayload: string;
   };
   withdrawEligibility?: {
     canWithdraw: boolean;
