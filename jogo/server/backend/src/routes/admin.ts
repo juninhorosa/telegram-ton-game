@@ -2,29 +2,45 @@ import { FastifyInstance } from "fastify";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../index";
 
-async function requireAdminKey(request: any, reply: any) {
+async function requireAdminAccess(request: any, reply: any) {
   const adminKey = process.env.ADMIN_API_KEY;
-  if (!adminKey) return;
   const provided = request.headers["x-admin-key"];
-  if (provided !== adminKey) {
+  if (adminKey && provided === adminKey) return;
+
+  const user = request.user as { id?: string } | undefined;
+  if (!user?.id) {
     reply.code(401);
     return reply.send({ error: "Unauthorized" });
+  }
+
+  const player = await prisma.player.findUnique({ where: { id: user.id }, select: { isAdmin: true } });
+  if (!player?.isAdmin) {
+    reply.code(403);
+    return reply.send({ error: "Forbidden" });
   }
 }
 
 export async function adminRoutes(app: FastifyInstance) {
   // Dashboard metrics
-  app.get("/dashboard", { preHandler: [app.authenticate, requireAdminKey] }, async () => {
+  app.get("/dashboard", { preHandler: [app.authenticate, requireAdminAccess] }, async () => {
     const now = new Date();
     const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const [activePlayers24h, activePlayers7d, totalPlayers, pendingWithdrawals, veAgg] = await Promise.all([
+    const [activePlayers24h, activePlayers7d, totalPlayers, pendingWithdrawals, pendingDeposits, veAgg, withdrawnAgg, depositAgg, configRows] =
+      await Promise.all([
       prisma.player.count({ where: { lastCollectAt: { gte: last24h } } }),
       prisma.player.count({ where: { lastCollectAt: { gte: last7d } } }),
       prisma.player.count(),
       prisma.withdrawal.count({ where: { status: "pending" } }),
+      prisma.deposit.count({ where: { status: "pending" } }),
       prisma.player.aggregate({ _sum: { veBalance: true } }),
+      prisma.withdrawal.aggregate({
+        where: { status: { in: ["approved", "processing", "completed"] } },
+        _sum: { veAmount: true, tonAmount: true },
+      }),
+      prisma.player.aggregate({ _sum: { tonDepositedTotal: true } }),
+      prisma.systemConfig.findMany({ where: { key: { not: "admin_player_id" } } }),
     ]);
 
     return {
@@ -32,12 +48,19 @@ export async function adminRoutes(app: FastifyInstance) {
       activePlayers7d,
       totalPlayers,
       pendingWithdrawals,
+      pendingDeposits,
       veInCirculation: veAgg._sum.veBalance || 0,
+      totals: {
+        withdrawnVE: withdrawnAgg._sum.veAmount || 0,
+        withdrawnTON: withdrawnAgg._sum.tonAmount || 0,
+        depositedTON: depositAgg._sum.tonDepositedTotal || 0,
+      },
+      config: Object.fromEntries(configRows.map((r) => [r.key, r.value])),
     };
   });
 
   // Get all withdrawals (admin)
-  app.get("/withdrawals", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.get("/withdrawals", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { status, page = 1, limit = 20 } = request.query as {
       status?: string;
       page?: number;
@@ -62,7 +85,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Approve withdrawal
-  app.post("/withdrawals/:id/approve", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.post("/withdrawals/:id/approve", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     const user = request.user as { id: string; username: string };
 
@@ -85,7 +108,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Reject withdrawal
-  app.post("/withdrawals/:id/reject", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.post("/withdrawals/:id/reject", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     const { reason } = request.body as { reason: string };
     const user = request.user as { id: string; username: string };
@@ -115,7 +138,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Get audit log
-  app.get("/audit-log", { preHandler: [app.authenticate, requireAdminKey] }, async () => {
+  app.get("/audit-log", { preHandler: [app.authenticate, requireAdminAccess] }, async () => {
     return prisma.auditLog.findMany({
       orderBy: { createdAt: "desc" },
       take: 100,
@@ -123,7 +146,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Get all players (admin)
-  app.get("/players", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.get("/players", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { search, page = 1, limit = 20 } = request.query as {
       search?: string;
       page?: number;
@@ -157,7 +180,7 @@ export async function adminRoutes(app: FastifyInstance) {
   });
 
   // Ban player
-  app.post("/players/:id/ban", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.post("/players/:id/ban", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     const { banType } = request.body as { banType: "soft" | "hard" };
     const user = request.user as { id: string; username: string };
@@ -180,7 +203,40 @@ export async function adminRoutes(app: FastifyInstance) {
     return player;
   });
 
-  app.get("/deposits", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.get("/config", { preHandler: [app.authenticate, requireAdminAccess] }, async () => {
+    return prisma.systemConfig.findMany({
+      where: { key: { not: "admin_player_id" } },
+      orderBy: { key: "asc" },
+    });
+  });
+
+  app.post("/config", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
+    const { key, value } = request.body as { key: string; value: string };
+    const user = request.user as { id: string; username: string };
+
+    if (!key || typeof key !== "string") return { error: "Invalid key" };
+    if (key === "admin_player_id") return { error: "Forbidden key" };
+
+    const row = await prisma.systemConfig.upsert({
+      where: { key },
+      create: { key, value: String(value ?? "") },
+      update: { value: String(value ?? "") },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        adminId: user.id,
+        adminName: user.username,
+        action: "set_config",
+        target: key,
+        details: `Set ${key}=${String(value ?? "")}`,
+      },
+    });
+
+    return row;
+  });
+
+  app.get("/deposits", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { status, page = 1, limit = 20 } = request.query as {
       status?: string;
       page?: number;
@@ -204,7 +260,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return { deposits, total, page, totalPages: Math.ceil(total / limit) };
   });
 
-  app.post("/deposits/:id/approve", { preHandler: [app.authenticate, requireAdminKey] }, async (request) => {
+  app.post("/deposits/:id/approve", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     const user = request.user as { id: string; username: string };
 

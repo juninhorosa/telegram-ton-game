@@ -2,6 +2,24 @@ import { FastifyInstance } from "fastify";
 import { addDays, differenceInCalendarDays } from "date-fns";
 import { prisma } from "../index";
 
+async function requireAdminAccess(request: any, reply: any) {
+  const adminKey = process.env.ADMIN_API_KEY;
+  const provided = request.headers["x-admin-key"];
+  if (adminKey && provided === adminKey) return;
+
+  const user = request.user as { id?: string } | undefined;
+  if (!user?.id) {
+    reply.code(401);
+    return reply.send({ error: "Unauthorized" });
+  }
+
+  const player = await prisma.player.findUnique({ where: { id: user.id }, select: { isAdmin: true } });
+  if (!player?.isAdmin) {
+    reply.code(403);
+    return reply.send({ error: "Forbidden" });
+  }
+}
+
 async function getNumberConfig(key: string, fallback: number) {
   const row = await prisma.systemConfig.findUnique({ where: { key } });
   if (!row) return fallback;
@@ -89,7 +107,7 @@ export async function playerRoutes(app: FastifyInstance) {
   });
 
   // Get player by ID (admin)
-  app.get("/:id", { preHandler: [app.authenticate] }, async (request) => {
+  app.get("/:id", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     return prisma.player.findUnique({
       where: { id },
@@ -98,7 +116,7 @@ export async function playerRoutes(app: FastifyInstance) {
   });
 
   // Update balance (admin)
-  app.patch("/:id/balance", { preHandler: [app.authenticate] }, async (request) => {
+  app.patch("/:id/balance", { preHandler: [app.authenticate, requireAdminAccess] }, async (request) => {
     const { id } = request.params as { id: string };
     const { field, amount, reason } = request.body as { field: string; amount: number; reason: string };
 

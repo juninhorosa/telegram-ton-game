@@ -4,6 +4,7 @@ interface PlayerState {
   id: string;
   username: string;
   tonWallet?: string | null;
+  isAdmin: boolean;
   level: number;
   xp: number;
   veBalance: number;
@@ -38,6 +39,7 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   id: "",
   username: "",
   tonWallet: null,
+  isAdmin: false,
   level: 1,
   xp: 0,
   veBalance: 0,

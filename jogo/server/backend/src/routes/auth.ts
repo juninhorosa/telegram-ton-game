@@ -1,6 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { z } from "zod";
 import crypto from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../index";
 
 const registerSchema = z.object({
@@ -80,14 +81,26 @@ export async function authRoutes(app: FastifyInstance) {
         if (referrer) referredById = referrer.id;
       }
 
-      player = await prisma.player.create({
-        data: {
-          telegramId: body.telegramId,
-          username: body.username,
-          referralCode,
-          referredById,
-          csBalance: 100, // Welcome bonus
-        },
+      player = await prisma.$transaction(async (tx) => {
+        const created = await tx.player.create({
+          data: {
+            telegramId: body.telegramId,
+            username: body.username,
+            referralCode,
+            referredById,
+            csBalance: 100, // Welcome bonus
+          },
+        });
+
+        try {
+          await tx.systemConfig.create({ data: { key: "admin_player_id", value: created.id } });
+          return tx.player.update({ where: { id: created.id }, data: { isAdmin: true } });
+        } catch (err) {
+          if (err && typeof err === "object" && (err as Prisma.PrismaClientKnownRequestError).code === "P2002") {
+            return created;
+          }
+          throw err;
+        }
       });
 
       // Give free Common guardian
@@ -104,6 +117,26 @@ export async function authRoutes(app: FastifyInstance) {
           csPerHour: 12,
         },
       });
+    }
+
+    if (!player) throw new Error("Player not found");
+
+    if (!player.isAdmin) {
+      const adminRow = await prisma.systemConfig.findUnique({ where: { key: "admin_player_id" } });
+      if (!adminRow) {
+        const currentPlayer = player;
+        player = await prisma.$transaction(async (tx) => {
+          try {
+            await tx.systemConfig.create({ data: { key: "admin_player_id", value: currentPlayer.id } });
+            return tx.player.update({ where: { id: currentPlayer.id }, data: { isAdmin: true } });
+          } catch (err) {
+            if (err && typeof err === "object" && (err as Prisma.PrismaClientKnownRequestError).code === "P2002") {
+              return currentPlayer;
+            }
+            throw err;
+          }
+        });
+      }
     }
 
     const token = app.jwt.sign({

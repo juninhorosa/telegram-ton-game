@@ -29,6 +29,7 @@ model Player {
   riskScore       Int       @default(0)
   isBanned        Boolean   @default(false)
   banType         String    @default("none")
+  isAdmin         Boolean   @default(false)
 
   referralCode    String    @unique
   referredById    String?

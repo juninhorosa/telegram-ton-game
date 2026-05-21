@@ -95,4 +95,10 @@ export const api = {
   // Referrals
   getReferrals: () => request("/referrals"),
   getReferralLink: () => request("/referrals/link"),
+
+  // Admin
+  adminDashboard: () => request("/admin/dashboard"),
+  adminGetConfig: () => request("/admin/config"),
+  adminSetConfig: (key: string, value: string) =>
+    request("/admin/config", { method: "POST", body: JSON.stringify({ key, value }) }),
 };
