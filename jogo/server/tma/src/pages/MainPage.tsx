@@ -131,10 +131,13 @@ export function MainPage() {
       </div>
 
       {adOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-lg bg-[#0a0a0f] border border-[#2a2a4a] rounded-2xl overflow-hidden">
-            <div className="px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a]">
-              <div className="text-sm font-semibold">Anúncio</div>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm">
+          <div className="h-full w-full max-w-lg mx-auto flex flex-col">
+            <div className="px-4 py-3 flex items-center justify-between border-b border-[#2a2a4a] bg-[#0a0a0f]/95">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate">ALPHA</div>
+                <div className="text-[11px] text-gray-400">ads by Moneytag</div>
+              </div>
               <button
                 onClick={() => {
                   setAdOpen(false);
@@ -145,16 +148,20 @@ export function MainPage() {
                 Fechar
               </button>
             </div>
-            <div className="h-[60vh] bg-black">
+
+            <div className="flex-1 bg-black">
               <iframe
                 title="ad"
                 src={player.publicConfig?.adLink || "about:blank"}
                 className="w-full h-full"
-                sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin"
+                sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-modals allow-top-navigation-by-user-activation"
+                referrerPolicy="no-referrer-when-downgrade"
               />
             </div>
-            <div className="p-4 space-y-2">
-              {adError && <div className="text-xs text-red-300">{adError}</div>}
+
+            <div className="p-4 space-y-2 bg-[#0a0a0f]/95 border-t border-[#2a2a4a]">
+              <div className="text-xs text-gray-400 text-center">Clique para receber a recompensa!</div>
+              {adError && <div className="text-xs text-red-300 text-center">{adError}</div>}
               <button
                 disabled={adCountdown > 0}
                 onClick={async () => {
@@ -175,9 +182,6 @@ export function MainPage() {
               >
                 {adCountdown > 0 ? `Continuar (${adCountdown})` : "Continuar"}
               </button>
-              <div className="text-[11px] text-gray-500">
-                Para configurar o anúncio, use a chave <span className="font-mono">ad_link</span> no painel admin.
-              </div>
             </div>
           </div>
         </div>
