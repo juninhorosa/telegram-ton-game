@@ -27,6 +27,7 @@ interface PlayerState {
     moneytagScriptSrc: string;
     moneytagShowFn: string;
     moneytagShowPayload: string;
+    moneytagZone: string;
   };
   withdrawEligibility?: {
     canWithdraw: boolean;

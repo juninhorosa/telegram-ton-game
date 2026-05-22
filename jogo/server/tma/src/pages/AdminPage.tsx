@@ -38,6 +38,7 @@ export function AdminPage() {
       "moneytag_script_src",
       "moneytag_show_fn",
       "moneytag_show_payload",
+      "moneytag_zone",
       "bot_farm_price_ve",
       "bot_farm_roi_days",
       "bot_farm_purchase_cooldown_hours",

@@ -58,6 +58,7 @@ export async function playerRoutes(app: FastifyInstance) {
     const moneytagScriptSrc = await getStringConfig("moneytag_script_src", "");
     const moneytagShowFn = await getStringConfig("moneytag_show_fn", "");
     const moneytagShowPayload = await getStringConfig("moneytag_show_payload", "");
+    const moneytagZone = await getStringConfig("moneytag_zone", "");
 
     const now = new Date();
     const lastWithdrawal = await prisma.withdrawal.findFirst({
@@ -120,6 +121,7 @@ export async function playerRoutes(app: FastifyInstance) {
         moneytagScriptSrc,
         moneytagShowFn,
         moneytagShowPayload,
+        moneytagZone,
       },
     };
   });

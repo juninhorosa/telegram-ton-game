@@ -49,9 +49,21 @@ export function MainPage() {
     return result;
   };
 
-  const ensureScriptLoaded = async (src: string) => {
-    const existing = document.querySelector(`script[data-alpha-src="${src}"]`) as HTMLScriptElement | null;
+  const normalizeScriptSrc = (src: string) => {
+    const s = src.trim();
+    if (s.startsWith("//")) return `https:${s}`;
+    return s;
+  };
+
+  const ensureScriptLoaded = async (src: string, attrs?: Record<string, string>) => {
+    const normalized = normalizeScriptSrc(src);
+    const existing = document.querySelector(`script[data-alpha-src="${normalized}"]`) as HTMLScriptElement | null;
     if (existing) {
+      if (attrs) {
+        for (const [k, v] of Object.entries(attrs)) {
+          existing.setAttribute(k, v);
+        }
+      }
       if ((existing as any)._alphaLoaded) return;
       await new Promise<void>((resolve, reject) => {
         existing.addEventListener("load", () => resolve());
@@ -62,10 +74,15 @@ export function MainPage() {
 
     await new Promise<void>((resolve, reject) => {
       const s = document.createElement("script");
-      s.src = src;
+      s.src = normalized;
       s.async = true;
       s.defer = true;
-      s.setAttribute("data-alpha-src", src);
+      s.setAttribute("data-alpha-src", normalized);
+      if (attrs) {
+        for (const [k, v] of Object.entries(attrs)) {
+          s.setAttribute(k, v);
+        }
+      }
       s.onload = () => {
         (s as any)._alphaLoaded = true;
         resolve();
@@ -80,10 +97,14 @@ export function MainPage() {
     const scriptSrc = cfg?.moneytagScriptSrc || "";
     const fnName = cfg?.moneytagShowFn || "";
     const payloadRaw = cfg?.moneytagShowPayload || "";
+    const zone = cfg?.moneytagZone || "";
     if (!scriptSrc || !fnName) return false;
 
     try {
-      await ensureScriptLoaded(scriptSrc);
+      const attrs: Record<string, string> = {};
+      if (zone) attrs["data-zone"] = zone;
+      attrs["data-sdk"] = fnName;
+      await ensureScriptLoaded(scriptSrc, attrs);
     } catch {
       return false;
     }
