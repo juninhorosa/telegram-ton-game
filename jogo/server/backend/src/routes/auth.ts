@@ -42,7 +42,9 @@ function verifyTelegramInitData(initData: string, botToken: string) {
 async function getNumberConfig(key: string, fallback: number) {
   const row = await prisma.systemConfig.findUnique({ where: { key } });
   if (!row) return fallback;
-  const n = Number(row.value);
+  const raw = String(row.value ?? "").trim();
+  const normalized = raw.includes(",") && !raw.includes(".") ? raw.replace(",", ".") : raw;
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : fallback;
 }
 

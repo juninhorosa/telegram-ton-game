@@ -43,12 +43,6 @@ export function MainPage() {
     return () => clearInterval(t);
   }, [adOpen, adCountdown]);
 
-  const handleCollect = async () => {
-    const result = await api.collect();
-    updateBalances(result.earnedVE, result.earnedCS);
-    return result;
-  };
-
   const normalizeScriptSrc = (src: string) => {
     const s = src.trim();
     if (s.startsWith("//")) return `https:${s}`;
@@ -90,6 +84,56 @@ export function MainPage() {
       s.onerror = () => reject(new Error("script_load_failed"));
       document.head.appendChild(s);
     });
+  };
+
+  const showMoneytagAndWait = async (maxWaitMs = 12000) => {
+    const cfg = player.publicConfig;
+    const scriptSrc = cfg?.moneytagScriptSrc || "";
+    const fnName = cfg?.moneytagShowFn || "";
+    const payloadRaw = cfg?.moneytagShowPayload || "";
+    const zone = cfg?.moneytagZone || "";
+    if (!scriptSrc || !fnName) return false;
+
+    try {
+      const attrs: Record<string, string> = {};
+      if (zone) attrs["data-zone"] = zone;
+      attrs["data-sdk"] = fnName;
+      await ensureScriptLoaded(scriptSrc, attrs);
+    } catch {
+      return false;
+    }
+
+    const fn = (window as any)[fnName];
+    if (typeof fn !== "function") return false;
+
+    let payload: any = undefined;
+    if (payloadRaw) {
+      try {
+        payload = JSON.parse(payloadRaw);
+      } catch {
+        payload = payloadRaw;
+      }
+    }
+
+    try {
+      const ret = payload !== undefined ? fn(payload) : fn();
+      if (ret && typeof ret.then === "function") {
+        await ret;
+        return true;
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, maxWaitMs));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleCollect = async () => {
+    await showMoneytagAndWait(12000);
+    const result = await api.collect();
+    updateBalances(result.earnedVE, result.earnedCS);
+    await loadData();
+    return result;
   };
 
   const tryShowMoneytag = async () => {
