@@ -5,7 +5,7 @@ import http from "node:http";
 const BOT_TOKEN = process.env.BOT_TOKEN || "";
 const WEBAPP_URL = process.env.WEBAPP_URL || "https://telegram-ton-game.juninhorosa11-4b3.workers.dev";
 const API_BASE = process.env.API_BASE || "http://localhost:3001/api";
-const WEBHOOK_URL = process.env.WEBHOOK_URL || "";
+const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL || "";
 const PORT = parseInt(process.env.PORT || "3000");
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -224,16 +224,35 @@ if (WEBHOOK_URL) {
   const domain = normalizeBaseUrl(WEBHOOK_URL);
   const fullHookUrl = `${domain}${hookPath}`;
 
-  bot.telegram.setWebhook(fullHookUrl).then(() => {
-    const server = http.createServer(bot.webhookCallback(hookPath));
-    server.listen(PORT, () => {
-      console.log(`ALPHA Bot webhook listening on :${PORT} (${fullHookUrl})`);
+  bot.telegram
+    .setWebhook(fullHookUrl)
+    .then(() => {
+      const server = http.createServer(bot.webhookCallback(hookPath));
+      server.listen(PORT, () => {
+        console.log(`ALPHA Bot webhook listening on :${PORT} (${fullHookUrl})`);
+      });
+    })
+    .catch((err) => {
+      console.error("Failed to set webhook:", err);
+      process.exit(1);
     });
-  });
 } else {
-  bot.launch().then(() => {
-    console.log("ALPHA Bot running");
-  });
+  const launchPolling = async () => {
+    try {
+      await bot.launch();
+      console.log("ALPHA Bot running (polling)");
+    } catch (err: any) {
+      const msg = String(err?.message || "");
+      if (msg.includes("409") && msg.toLowerCase().includes("getupdates")) {
+        console.error("Polling conflict (409). Another bot instance is running. Retrying in 15s...");
+        setTimeout(() => launchPolling(), 15000);
+        return;
+      }
+      console.error("Bot launch failed:", err);
+      process.exit(1);
+    }
+  };
+  launchPolling();
 }
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
