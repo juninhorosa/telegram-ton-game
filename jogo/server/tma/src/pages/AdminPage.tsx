@@ -32,7 +32,7 @@ export function AdminPage() {
       "withdraw_cooldown_days",
       "free_withdraw_wait_days",
       "ad_reward_ve",
-      "ad_reward_cooldown_hours",
+      "ad_reward_cooldown_seconds",
       "ad_link",
       "ad_min_seconds",
       "moneytag_script_src",

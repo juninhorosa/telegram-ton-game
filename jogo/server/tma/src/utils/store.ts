@@ -5,6 +5,7 @@ interface PlayerState {
   username: string;
   tonWallet?: string | null;
   tonBalance: number;
+  lastAdRewardAt?: string | null;
   isAdmin: boolean;
   level: number;
   xp: number;
@@ -25,6 +26,7 @@ interface PlayerState {
   publicConfig?: {
     adLink: string;
     adMinSeconds: number;
+    adRewardCooldownSeconds: number;
     moneytagScriptSrc: string;
     moneytagShowFn: string;
     moneytagShowPayload: string;
@@ -49,6 +51,7 @@ export const usePlayerStore = create<PlayerState>((set) => ({
   username: "",
   tonWallet: null,
   tonBalance: 0,
+  lastAdRewardAt: null,
   isAdmin: false,
   level: 1,
   xp: 0,

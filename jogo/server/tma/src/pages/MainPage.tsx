@@ -15,6 +15,7 @@ export function MainPage() {
   const [adCountdown, setAdCountdown] = useState(0);
   const [adError, setAdError] = useState("");
   const [adBusy, setAdBusy] = useState(false);
+  const [adCooldownRemaining, setAdCooldownRemaining] = useState(0);
 
   useEffect(() => {
     loadData();
@@ -42,6 +43,28 @@ export function MainPage() {
     const t = setInterval(() => setAdCountdown((s) => Math.max(0, s - 1)), 1000);
     return () => clearInterval(t);
   }, [adOpen, adCountdown]);
+
+  useEffect(() => {
+    const calc = () => {
+      const last = player.lastAdRewardAt ? new Date(player.lastAdRewardAt).getTime() : 0;
+      const cd = player.publicConfig?.adRewardCooldownSeconds ?? 24 * 60 * 60;
+      if (!last || !cd) return 0;
+      const next = last + cd * 1000;
+      return Math.max(0, Math.ceil((next - Date.now()) / 1000));
+    };
+    setAdCooldownRemaining(calc());
+    const t = setInterval(() => setAdCooldownRemaining(calc()), 1000);
+    return () => clearInterval(t);
+  }, [player.lastAdRewardAt, player.publicConfig?.adRewardCooldownSeconds]);
+
+  const formatHms = (s: number) => {
+    const sec = Math.max(0, Math.floor(s));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const ss = sec % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    return `${m}:${String(ss).padStart(2, "0")}`;
+  };
 
   const normalizeScriptSrc = (src: string) => {
     const s = src.trim();
@@ -252,8 +275,10 @@ export function MainPage() {
         <button
           onClick={async () => {
             setAdError("");
+            setError("");
             setAdBusy(true);
             try {
+              if (adCooldownRemaining > 0) return;
               const usedMoneytag = await tryShowMoneytag();
               if (usedMoneytag) return;
 
@@ -265,16 +290,23 @@ export function MainPage() {
               }
 
               const res = await api.claimAdReward();
-              if (res?.error) return;
+              if (res?.error) {
+                setAdError(String(res.error));
+                return;
+              }
               await loadData();
             } finally {
               setAdBusy(false);
             }
           }}
-          disabled={adBusy}
-          className="bg-[#1a1a2e] rounded-xl p-3 border border-[#2a2a4a] text-sm disabled:opacity-50"
+          disabled={adBusy || adCooldownRemaining > 0}
+          className={`rounded-xl p-3 border text-sm ${
+            adBusy || adCooldownRemaining > 0
+              ? "bg-[#141426] border-[#2a2a4a] text-gray-500"
+              : "bg-[#1a1a2e] border-[#2a2a4a] text-white"
+          }`}
         >
-          {adBusy ? "Abrindo..." : "Assistir anúncio (VE)"}
+          {adBusy ? "Abrindo..." : adCooldownRemaining > 0 ? `Aguarde ${formatHms(adCooldownRemaining)}` : "Assistir anúncio (VE)"}
         </button>
         <button
           onClick={async () => {
@@ -287,6 +319,12 @@ export function MainPage() {
           Comprar Bot Farm
         </button>
       </div>
+
+      {adError && (
+        <div className="bg-[#1a1a2e] rounded-xl p-3 border border-red-500/30 text-center">
+          <p className="text-xs text-red-300">{adError}</p>
+        </div>
+      )}
 
       {adOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm">
@@ -336,7 +374,9 @@ export function MainPage() {
                     setAdError("Falha ao receber recompensa.");
                   }
                 }}
-                className="w-full bg-gradient-to-r from-void-500 to-cyber-500 py-3 rounded-xl text-sm font-semibold disabled:opacity-50"
+                className={`w-full py-3 rounded-xl text-sm font-semibold ${
+                  adCountdown > 0 ? "bg-[#3a3a3a] text-gray-300" : "bg-gradient-to-r from-void-500 to-cyber-500"
+                }`}
               >
                 {adCountdown > 0 ? `Continuar (${adCountdown})` : "Continuar"}
               </button>

@@ -57,6 +57,11 @@ export async function playerRoutes(app: FastifyInstance) {
     const freeWithdrawWaitDays = await getNumberConfig("free_withdraw_wait_days", 15);
     const adLink = await getStringConfig("ad_link", "");
     const adMinSeconds = await getNumberConfig("ad_min_seconds", 8);
+    const adRewardCooldownSecondsCfg = await getNumberConfig("ad_reward_cooldown_seconds", -1);
+    const adRewardCooldownSeconds =
+      adRewardCooldownSecondsCfg > 0
+        ? adRewardCooldownSecondsCfg
+        : Math.max(1, await getNumberConfig("ad_reward_cooldown_hours", 24)) * 60 * 60;
     const moneytagScriptSrc = await getStringConfig("moneytag_script_src", "");
     const moneytagShowFn = await getStringConfig("moneytag_show_fn", "");
     const moneytagShowPayload = await getStringConfig("moneytag_show_payload", "");
@@ -120,6 +125,7 @@ export async function playerRoutes(app: FastifyInstance) {
       publicConfig: {
         adLink,
         adMinSeconds,
+        adRewardCooldownSeconds,
         moneytagScriptSrc,
         moneytagShowFn,
         moneytagShowPayload,

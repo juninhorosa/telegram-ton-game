@@ -1,7 +1,7 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../index";
 import { z } from "zod";
-import { addHours } from "date-fns";
+import { addSeconds } from "date-fns";
 import type { Prisma } from "@prisma/client";
 
 async function getNumberConfig(key: string, fallback: number) {
@@ -105,16 +105,19 @@ export async function farmingRoutes(app: FastifyInstance) {
     z.object({ placement: z.string().optional() }).parse(request.body ?? {});
 
     const rewardVE = await getNumberConfig("ad_reward_ve", 5);
-    const cooldownHours = await getNumberConfig("ad_reward_cooldown_hours", 24);
+    const cooldownSecondsCfg = await getNumberConfig("ad_reward_cooldown_seconds", -1);
+    const cooldownSeconds =
+      cooldownSecondsCfg > 0 ? cooldownSecondsCfg : Math.max(1, await getNumberConfig("ad_reward_cooldown_hours", 24)) * 60 * 60;
 
     const player = await prisma.player.findUniqueOrThrow({ where: { id: user.id } });
     if (player.isBanned) return { error: "Account is banned" };
 
     const now = new Date();
     if (player.lastAdRewardAt) {
-      const nextAt = addHours(player.lastAdRewardAt, cooldownHours);
+      const nextAt = addSeconds(player.lastAdRewardAt, cooldownSeconds);
       if (nextAt.getTime() > now.getTime()) {
-        return { error: `Next ad reward available on ${nextAt.toISOString()}` };
+        const remainingSeconds = Math.ceil((nextAt.getTime() - now.getTime()) / 1000);
+        return { error: `Next ad reward available on ${nextAt.toISOString()}`, nextAt: nextAt.toISOString(), remainingSeconds };
       }
     }
 
@@ -141,6 +144,6 @@ export async function farmingRoutes(app: FastifyInstance) {
       });
     });
 
-    return { rewardVE, xpEarned };
+    return { rewardVE, xpEarned, cooldownSeconds };
   });
 }
