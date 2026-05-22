@@ -403,7 +403,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
       await tx.player.update({
         where: { id: deposit.playerId },
-        data: { tonDepositedTotal: { increment: deposit.tonAmount } },
+        data: { tonDepositedTotal: { increment: deposit.tonAmount }, tonBalance: { increment: deposit.tonAmount } },
       });
 
       const depositor = await tx.player.findUnique({

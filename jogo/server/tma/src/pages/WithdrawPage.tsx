@@ -5,7 +5,7 @@ import { usePlayerStore } from "../utils/store";
 import { ArrowDownToLine, Wallet, Clock, CheckCircle, XCircle } from "lucide-react";
 
 export function WithdrawPage() {
-  const { veBalance, economy, withdrawEligibility } = usePlayerStore();
+  const { veBalance, tonBalance, economy, withdrawEligibility, setPlayer } = usePlayerStore();
   const [tab, setTab] = useState<"withdraw" | "deposit" | "convert">("withdraw");
   const [amount, setAmount] = useState("");
   const [tonAmount, setTonAmount] = useState("");
@@ -24,19 +24,20 @@ export function WithdrawPage() {
   const handleWithdraw = async () => {
     setError("");
     setSuccess("");
-    const val = parseFloat(amount);
-    if (isNaN(val) || val < 10) { setError("Minimum withdrawal: 10 VE"); return; }
-    if (val > veBalance) { setError("Insufficient balance"); return; }
+    const val = parseFloat(tonAmount);
+    if (isNaN(val) || val <= 0) { setError("Informe o valor em TON"); return; }
+    if (val > tonBalance) { setError("Saldo TON insuficiente"); return; }
     if (withdrawEligibility && !withdrawEligibility.canWithdraw) { setError(withdrawEligibility.reason || "Not eligible"); return; }
 
     setLoading(true);
     try {
-      const result = await api.requestWithdrawal(val);
+      const result = await api.requestWithdrawal({ tonAmount: val } as any);
       if (result.error) { setError(result.error); }
       else {
-        setSuccess(`Withdrawal of ${val} VE requested!`);
-        setAmount("");
+        setSuccess(`Saque de ${val.toFixed(6)} TON solicitado!`);
+        setTonAmount("");
         setWithdrawals((prev) => [result, ...prev]);
+        api.getProfile().then(setPlayer).catch(() => {});
       }
     } catch (err) {
       setError("Request failed");
@@ -98,9 +99,22 @@ export function WithdrawPage() {
 
       {/* Balance Card */}
       <div className="bg-gradient-to-br from-void-800 to-[#1a1a2e] rounded-xl p-4 border border-void-500/30">
-        <p className="text-xs text-gray-400 mb-1">Available Balance</p>
-        <p className="text-3xl font-bold text-cyan-400">{veBalance.toFixed(2)} VE</p>
-        {economy && <p className="text-xs text-gray-500 mt-1">≈ {(veBalance * economy.veToTonRate).toFixed(6)} TON</p>}
+        <p className="text-xs text-gray-400 mb-2">Saldos</p>
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="text-xs text-gray-500">VE</div>
+            <div className="text-2xl font-bold text-cyan-400">{veBalance.toFixed(2)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-gray-500">TON</div>
+            <div className="text-2xl font-bold text-amber-200">{tonBalance.toFixed(6)}</div>
+          </div>
+        </div>
+        {economy && (
+          <p className="text-xs text-gray-500 mt-2">
+            Taxa: 1 VE ≈ {economy.veToTonRate.toFixed(6)} TON
+          </p>
+        )}
       </div>
 
       {tab === "withdraw" && (
@@ -113,29 +127,24 @@ export function WithdrawPage() {
           <div className="flex gap-2 mb-3">
             <input
               type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="Valor (min 10 VE)"
+              value={tonAmount}
+              onChange={(e) => setTonAmount(e.target.value)}
+              placeholder="Valor em TON"
               className="flex-1 bg-[#252540] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
             />
             <button
-              onClick={() => setAmount(veBalance.toFixed(2))}
+              onClick={() => setTonAmount(tonBalance.toFixed(6))}
               className="bg-[#252540] px-3 py-2 rounded-lg text-xs text-gray-400"
             >
               MAX
             </button>
           </div>
 
-          {amount && (
+          {tonAmount && (
             <div className="text-xs text-gray-500 mb-3 space-y-1">
               <p>
-                Taxa: {(economy?.withdrawFeePercent ?? 5)}% → Líquido: {(parseFloat(amount || "0") * (1 - (economy?.withdrawFeePercent ?? 5) / 100)).toFixed(2)} VE
+                Taxa: {(economy?.withdrawFeePercent ?? 5)}% → Líquido: {(parseFloat(tonAmount || "0") * (1 - (economy?.withdrawFeePercent ?? 5) / 100)).toFixed(6)} TON
               </p>
-              {economy && (
-                <p>
-                  Você recebe: ~{(parseFloat(amount || "0") * (1 - economy.withdrawFeePercent / 100) * economy.veToTonRate).toFixed(6)} TON
-                </p>
-              )}
             </div>
           )}
 
@@ -145,7 +154,7 @@ export function WithdrawPage() {
           <motion.button
             whileTap={{ scale: 0.97 }}
             onClick={handleWithdraw}
-            disabled={loading || !amount || (withdrawEligibility ? !withdrawEligibility.canWithdraw : false)}
+            disabled={loading || !tonAmount || (withdrawEligibility ? !withdrawEligibility.canWithdraw : false)}
             className="w-full bg-gradient-to-r from-void-500 to-cyber-500 py-3 rounded-xl text-sm font-semibold disabled:opacity-50"
           >
             {loading ? "Processando..." : "Solicitar saque"}
@@ -219,6 +228,62 @@ export function WithdrawPage() {
               className="bg-[#252540] rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500"
             />
           </div>
+
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+          {success && <p className="text-emerald-400 text-xs">{success}</p>}
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              disabled={loading}
+              onClick={async () => {
+                setError("");
+                setSuccess("");
+                const val = parseFloat(amount);
+                if (!Number.isFinite(val) || val <= 0) return setError("Informe VE");
+                if (val > veBalance) return setError("Saldo VE insuficiente");
+                setLoading(true);
+                try {
+                  const res = await api.exchangeVeToTon(val);
+                  if (res?.error) setError(String(res.error));
+                  else {
+                    setSuccess(`Convertido: ${res.tonAmount} TON`);
+                    api.getProfile().then(setPlayer).catch(() => {});
+                  }
+                } catch {
+                  setError("Falha ao converter");
+                }
+                setLoading(false);
+              }}
+              className="bg-[#252540] px-3 py-2 rounded-lg text-xs text-gray-200 disabled:opacity-50"
+            >
+              VE → TON
+            </button>
+            <button
+              disabled={loading}
+              onClick={async () => {
+                setError("");
+                setSuccess("");
+                const val = parseFloat(tonAmount);
+                if (!Number.isFinite(val) || val <= 0) return setError("Informe TON");
+                if (val > tonBalance) return setError("Saldo TON insuficiente");
+                setLoading(true);
+                try {
+                  const res = await api.exchangeTonToVe(val);
+                  if (res?.error) setError(String(res.error));
+                  else {
+                    setSuccess(`Convertido: ${res.veAmount} VE`);
+                    api.getProfile().then(setPlayer).catch(() => {});
+                  }
+                } catch {
+                  setError("Falha ao converter");
+                }
+                setLoading(false);
+              }}
+              className="bg-[#252540] px-3 py-2 rounded-lg text-xs text-gray-200 disabled:opacity-50"
+            >
+              TON → VE
+            </button>
+          </div>
         </div>
       )}
 
@@ -233,7 +298,7 @@ export function WithdrawPage() {
                   <div className="flex items-center gap-3">
                     {statusIcons[w.status]}
                     <div>
-                      <p className="text-sm font-medium">{w.veAmount} VE</p>
+                      <p className="text-sm font-medium">{Number(w.tonAmount || 0).toFixed(6)} TON</p>
                       <p className="text-xs text-gray-500">{new Date(w.requestedAt).toLocaleDateString()}</p>
                     </div>
                   </div>

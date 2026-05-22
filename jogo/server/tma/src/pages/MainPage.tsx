@@ -131,6 +131,10 @@ export function MainPage() {
   const handleCollect = async () => {
     await showMoneytagAndWait(12000);
     const result = await api.collect();
+    if (result?.error) {
+      setError(String(result.error));
+      return { earnedVE: 0, earnedCS: 0 };
+    }
     updateBalances(result.earnedVE, result.earnedCS);
     await loadData();
     return result;

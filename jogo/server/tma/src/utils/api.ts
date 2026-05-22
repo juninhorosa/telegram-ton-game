@@ -109,17 +109,22 @@ export const api = {
     }),
 
   // Withdrawals
-  requestWithdrawal: (amount: number) =>
-    request("/withdrawals", {
-      method: "POST",
-      body: JSON.stringify({ amount }),
-    }),
+  requestWithdrawal: (payload: number | { veAmount?: number; tonAmount?: number }) => {
+    const body = typeof payload === "number" ? { veAmount: payload } : payload;
+    return request("/withdrawals", { method: "POST", body: JSON.stringify(body) });
+  },
   getWithdrawals: () => request("/withdrawals/me"),
 
   // Deposits
   requestDeposit: (tonAmount: number, txHash: string) =>
     request("/deposits/request", { method: "POST", body: JSON.stringify({ tonAmount, txHash }) }),
   getDeposits: () => request("/deposits/me"),
+
+  // Exchange
+  exchangeVeToTon: (veAmount: number) =>
+    request("/exchange/ve-to-ton", { method: "POST", body: JSON.stringify({ veAmount }) }),
+  exchangeTonToVe: (tonAmount: number) =>
+    request("/exchange/ton-to-ve", { method: "POST", body: JSON.stringify({ tonAmount }) }),
 
   // Referrals
   getReferrals: () => request("/referrals"),

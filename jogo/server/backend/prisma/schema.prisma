@@ -21,6 +21,7 @@ model Player {
   csBalance       Int       @default(0)
   pendingVE       Float     @default(0)
   pendingCS       Int       @default(0)
+  tonBalance      Float     @default(0)
 
   tonDepositedTotal Float   @default(0)
   lastAdRewardAt  DateTime?

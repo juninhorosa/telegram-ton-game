@@ -17,16 +17,19 @@ export async function withdrawalRoutes(app: FastifyInstance) {
   // Request withdrawal
   app.post("/", { preHandler: [app.authenticate] }, async (request) => {
     const user = request.user as { id: string };
-    const { amount } = z.object({ amount: z.number().min(10) }).parse(request.body);
+    const body = request.body as any;
+    const parsed = z
+      .object({
+        veAmount: z.number().positive().optional(),
+        tonAmount: z.number().positive().optional(),
+      })
+      .refine((v) => Boolean(v.veAmount) || Boolean(v.tonAmount), { message: "Missing amount" })
+      .parse(body);
 
     const player = await prisma.player.findUniqueOrThrow({ where: { id: user.id } });
 
     if (!player.tonWallet) {
       return { error: "Connect TON wallet first" };
-    }
-
-    if (player.veBalance < amount) {
-      return { error: "Insufficient VE balance" };
     }
 
     if (player.isBanned) {
@@ -60,20 +63,51 @@ export async function withdrawalRoutes(app: FastifyInstance) {
       }
     }
 
-    const netAmount = amount * (1 - feePercent / 100);
-    const tonAmount = netAmount * veToTonRate;
+    const requestedTon = parsed.tonAmount ?? null;
+    const requestedVe = parsed.veAmount ?? null;
+
+    if (requestedTon) {
+      if (player.tonBalance < requestedTon) return { error: "Insufficient TON balance" };
+      const netTon = requestedTon * (1 - feePercent / 100);
+      const veEquivalent = requestedTon / veToTonRate;
+
+      const withdrawal = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.player.update({
+          where: { id: user.id },
+          data: { tonBalance: { decrement: requestedTon } },
+        });
+
+        return tx.withdrawal.create({
+          data: {
+            playerId: user.id,
+            veAmount: Number(veEquivalent.toFixed(4)),
+            tonAmount: Number(netTon.toFixed(6)),
+            tonWallet: player.tonWallet!,
+            riskScore: player.riskScore,
+          },
+        });
+      });
+
+      return withdrawal;
+    }
+
+    const veAmount = Number(requestedVe || 0);
+    if (veAmount < 10) return { error: "Minimum withdrawal: 10 VE" };
+    if (player.veBalance < veAmount) return { error: "Insufficient VE balance" };
+    const netVe = veAmount * (1 - feePercent / 100);
+    const tonAmount = netVe * veToTonRate;
 
     const withdrawal = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.player.update({
         where: { id: user.id },
-        data: { veBalance: { decrement: amount } },
+        data: { veBalance: { decrement: veAmount } },
       });
 
       return tx.withdrawal.create({
         data: {
           playerId: user.id,
-          veAmount: amount,
-          tonAmount,
+          veAmount: veAmount,
+          tonAmount: Number(tonAmount.toFixed(6)),
           tonWallet: player.tonWallet!,
           riskScore: player.riskScore,
         },

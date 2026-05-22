@@ -4,8 +4,7 @@ import { usePlayerStore } from "../../utils/store";
 export function Layout({ children }: { children: React.ReactNode }) {
   const player = usePlayerStore();
   const ve = player.veBalance || 0;
-  const rate = player.economy?.veToTonRate || 0;
-  const ton = rate > 0 ? ve * rate : 0;
+  const ton = player.tonBalance || 0;
 
   return (
     <div className="min-h-screen pb-20 pt-16">
